@@ -194,7 +194,7 @@ func (c *Client) Login(ctx context.Context, req types.LoginRequest) (*types.Logi
 	if len(bodyBytes) > maxResponseBodySize {
 		return nil, fmt.Errorf("%w: Login 响应体超过 %d 字节上限", ErrLoginRejected, maxResponseBodySize)
 	}
-	bodySnippet := redactSnippet(bodyBytes, 100)
+	bodySnippet := logx.RedactSnippet(bodyBytes)
 
 	if httpResp.StatusCode == http.StatusOK {
 		loginResp, err := types.DecodeResponse(bodyBytes)
@@ -257,7 +257,7 @@ func (c *Client) Login(ctx context.Context, req types.LoginRequest) (*types.Logi
 	// CDN challenge 等 HTML 响应；不带 body 片段时用户难以定位根因。
 	// 摘要经 redactSnippet 先粗截再脱敏，与 request.go 同类分支脱敏口径拉平。
 	return nil, fmt.Errorf("%w: 非预期状态码 %d body=%s",
-		sentinel, httpResp.StatusCode, redactSnippet(bodyBytes, 100))
+		sentinel, httpResp.StatusCode, logx.RedactSnippet(bodyBytes))
 }
 
 // warnIfExpiresAtFallback 在 expiresAt 异常时输出 WARN 日志。两条 Login 路径

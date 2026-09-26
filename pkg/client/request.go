@@ -401,7 +401,7 @@ func (c *Client) httpDo(ctx context.Context, method, url string, body any, heade
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		sentinel := classifyHTTPStatus(resp.StatusCode, ErrInvalidResponse)
 		return nil, fmt.Errorf("%w: %s %s 返回状态码 %d body=%s",
-			sentinel, method, logx.RedactBody(url), resp.StatusCode, redactSnippet(respBytes, 100))
+			sentinel, method, logx.RedactBody(url), resp.StatusCode, logx.RedactSnippet(respBytes))
 	}
 	return respBytes, nil
 }
@@ -480,26 +480,7 @@ func (c *Client) doBizGet(ctx context.Context, url string, headers map[string]st
 		// sentinel 包装让 cmd 层和 SDK 用户统一 errors.Is 判定。
 		sentinel := classifyHTTPStatus(resp.StatusCode, ErrInvalidResponse)
 		return nil, fmt.Errorf("%w: GET %s 返回状态码 %d body=%s",
-			sentinel, logx.RedactBody(url), resp.StatusCode, redactSnippet(bodyBytes, 100))
+			sentinel, logx.RedactBody(url), resp.StatusCode, logx.RedactSnippet(bodyBytes))
 	}
 	return bodyBytes, nil
-}
-
-// redactSnippet 生成响应体的脱敏摘要，供错误消息附带诊断信息。
-//
-// 与 logx.RedactBodyThenTruncate 的区别：先按 redactSnippetPrefix 字节粗截，
-// 再交给 logx.RedactBodyThenTruncate 脱敏。目的是避免为「最终只会保留 100 字符」
-// 的摘要，对整个 4MB 响应体做 string() 分配与两遍全量正则。
-//
-// 安全性： 契约要求「先脱敏再截断」是为了防止敏感值跨截断边界被泄漏。
-// 这里先截断的是**原始字节的前缀**，若敏感值恰好跨越该前缀边界，其前缀部分
-// 会进入脱敏窗口——但由于截断点之后的字节根本不会进入输出，不存在「值被部分
-// 保留而正则失配」的泄漏路径。前缀窗口（4096 字节）远大于摘要上限（100 字符），
-// 保证窗口内的敏感值一定被完整匹配并掩码。
-func redactSnippet(body []byte, max int) string {
-	const redactSnippetPrefix = 4096
-	if len(body) > redactSnippetPrefix {
-		body = body[:redactSnippetPrefix]
-	}
-	return logx.RedactBodyThenTruncate(body, max)
 }

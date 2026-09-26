@@ -18,6 +18,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Wenaixi/nazhi-cli/pkg/logx"
 	"github.com/Wenaixi/nazhi-cli/pkg/types"
 )
 
@@ -217,7 +218,7 @@ func (c *Client) UploadFile(ctx context.Context, filePath string) (*types.Upload
 		errBody, _ := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
 		// 复用 request.go 的 classifyHTTPStatus 统一 sentinel 分类。
 		sentinel := classifyHTTPStatus(resp.StatusCode, ErrUploadRejected)
-		return nil, fmt.Errorf("%w: status=%d body=%s", sentinel, resp.StatusCode, redactSnippet(errBody, 100))
+		return nil, fmt.Errorf("%w: status=%d body=%s", sentinel, resp.StatusCode, logx.RedactSnippet(errBody))
 	}
 
 	// 上传成功路径响应体同样封顶 maxResponseBodySize（4MiB，对齐 request.go 的双守卫）。
@@ -385,7 +386,7 @@ func (c *Client) DownloadFile(ctx context.Context, attachmentID int64, dst strin
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		errBody, _ := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
 		sentinel := classifyHTTPStatus(resp.StatusCode, ErrInvalidResponse)
-		return fmt.Errorf("%w: status=%d body=%s", sentinel, resp.StatusCode, redactSnippet(errBody, 100))
+		return fmt.Errorf("%w: status=%d body=%s", sentinel, resp.StatusCode, logx.RedactSnippet(errBody))
 	}
 
 	// 5. 流式写入（ctx 感知：ctx 取消时立即中断，删除半成品）
