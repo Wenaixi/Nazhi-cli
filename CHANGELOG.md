@@ -1,5 +1,31 @@
 # CHANGELOG
 
+## [Unreleased]
+
+本轮由第二轮架构深化扫描驱动（`improve-codebase-architecture`），把五处「同一份知识散落多处、靠注释维持一致」的区域改为单一模块承担。**不改变任何用户可见行为**（唯一例外见「修复」第一条的错误文案来源），旧接口全部保留，无 BREAKING。
+
+### 变更
+
+- **平台数值归一收为单一模块**（`pkg/types/flexnum.go`）：「平台可能把整数返回成数字 / 数字字符串 / 整值浮点 / 空串 / null，怎样才算合法整数」此前散落七处实现，防护程度各不相同——`FlexInt` 与 `PayloadPositiveIDValid` 有 2^63 上界检查，`parseFlexInt` 族与 `typicalCaseCodeString` 仍是会静默回绕的 `float64(int64(f))` 旧写法，`honorMapInt64` 与 `firstInt64` 用了 `math.Trunc` 但**缺上界**（大整数经 `int64(n)` 会溢出成负数）。四处注释互指「同口径」而代码各异。现由 `NormalizeInteger`（原始 JSON 字节）与 `NormalizeIntegerValue`（map 路径的 any 值）承载唯一实现，各调用点只保留自己的业务语义。**行为收紧两处**：`honorMapInt64` 与 `firstInt64` 顺带获得原先缺失的 2^63 越界拒绝；典型案例的字符串浮点（`"1.0"`）由报错改为识别，与平台返回裸浮点时的行为对齐。
+- **输出通道收为可注入值类型**（`cmd/nazhi/output_sink.go`）：全 CLI 六处直写 `os.Stdout` / `os.Stderr` 的出口改经 `outputSink`，包级函数签名与 160 处调用点零改动。此前测试要观察输出必须猴补进程全局变量（`captureStdio` 被 41 个文件、112 处复用），最该被测的「stdout 只承载成功数据」契约被放到测试面之外，且猴补全局本身是进程级竞争类别。
+- **读命令族共享 runner**（`cmd/nazhi/read_op_runner.go`）：写操作有 `runWriteOp`、列表有 `circleListMode`，最常见的「取一个对象」此前十七处 Run 各自内联同一套七步骨架。现由 `runReadOp` 承载，**「空即空数组」由构造保证**——nil 切片直塞成功信封会输出 `"data":null`，下游 `jq '.data[]'` 对 null 报错退出。
+- **并发维度收集收为单一内核**（`pkg/client` 的 `collectDims`）：结构化路径与透传路径此前各写一套 fan-out 与错误聚合，靠注释约定「改动一条必须同步核对另一条」维持一致，而该约定已在事实上破裂。现两条路径共用同一内核，错误分类经 `classifyDimErrors` 收口。
+- **诊断摘要收为单一入口**（`pkg/logx.RedactSnippet`）：摘要长度此前是各调用点传入的字面量 `100`，散落七处且接口上不可见；`session.go` 另有一种裸 `LimitReader` 写法，安全性仅靠「两处恰好都是 100」成立。现长度与「先脱敏后截断」的次序由模块单点持有，SDK 内私有实现已删除。
+
+### 修复
+
+- **分页上界错误文案与常量脱钩**：`honor list` 与 `typical-case list` 把 `500` 硬编码进「不能超过 500」的错误文案，而 `circle images` 用常量格式化——改 `maxPageSize` 时前两者会对用户谎报上限，而全仓无一条测试断言该文案。现三处统一走 `validatePaginationFlags`，文案由常量派生。
+
+### 测试
+
+- 新增五组守卫测试：数值归一的接受/拒绝形态穷举与越界不回绕、输出通道的跨出口归属对照、读命令的列表归一与分页边界、并发收集内核的保序与取消传播开关、脱敏摘要的跨截断边界不泄漏。
+- **本轮全部新增测试均经变异验证**（注入生产缺陷确认测试变红），其中四处变异最初存活并促使补强了测试设计，记录如下以备复发参考：
+  - **等价性测试的天然盲区**：`collectDims` 的保序用例最初无法证伪「按完成序落槽」——补了完成顺序夹具自检，确保完成顺序确实与声明顺序不同。
+  - **夹具长度决定测试是否恒绿**：脱敏的「跨截断边界」用例连续三轮变异不红。根因是输入总长未超过摘要上限，截断根本没触发；修正后仍不红，因为敏感键名本身也跨界、两种顺序输出完全相同。最终夹具需同时满足三个条件才有判别力。
+  - **变异不红 ≠ 测试无用**：`NormalizeIntegerFloat` 的 `math.Trunc` 判定退回旧写法后测试仍绿，经探针验证这是**正确结果**——两种写法在所有可达输入上等价，差异仅存在于上界判定已拦下的区间，真正的防线是上界检查（有独立守卫）。
+  - **既有测试的存废需自行核实**：扫描报告建议删除的两条测试（`TestUpdateHonor_NonIntegralTypeIDDoesNotTriggerLookup` / `TestFirstInt64_RejectsFractionalFloat`）经核实均为有效测试——前者是端到端业务行为，后者覆盖归一模块之外的调用点特有语义（多 key 短路、`float32` 支持），**本轮未删除任何既有测试**。
+
+
 ## [1.8.0] - 2026-09-26
 
 发布链接：[v1.8.0](https://github.com/Wenaixi/nazhi-cli/releases/tag/v1.8.0)
