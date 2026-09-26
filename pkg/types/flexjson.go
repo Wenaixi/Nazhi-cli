@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"math"
 	"strconv"
 	"strings"
 )
@@ -193,44 +192,18 @@ type FlexInt int
 func (f FlexInt) Int() int { return int(f) }
 
 // UnmarshalJSON 接受 number（含整值浮点）、数字字符串和 null。
+//
+// 判定口径委派 NormalizeInteger：整值判定、int64 范围拒绝与数字串去空格
+// 由归一模块单点持有，本方法只负责错误前缀的补上。
 func (f *FlexInt) UnmarshalJSON(data []byte) error {
 	if f == nil {
 		return fmt.Errorf("FlexInt: UnmarshalJSON on nil pointer")
 	}
-	data = bytes.TrimSpace(data)
-	if len(data) == 0 || bytes.Equal(data, []byte("null")) {
-		*f = 0
-		return nil
-	}
-
-	var text string
-	if data[0] == '"' {
-		if err := json.Unmarshal(data, &text); err != nil {
-			return fmt.Errorf("FlexInt: 解析字符串失败: %w", err)
-		}
-	} else {
-		text = string(data)
-	}
-	value, err := strconv.ParseFloat(strings.TrimSpace(text), 64)
+	v, err := NormalizeInteger(data)
 	if err != nil {
-		return fmt.Errorf("FlexInt: 无法解析数值 %q: %w", text, err)
+		return fmt.Errorf("FlexInt: %w", err)
 	}
-	// 整数判定改用 math.Trunc：`value != float64(int64(value))` 对 ≥2^63 的
-	// 整数字面量做 int64 往返会溢出回绕（float→int64 溢出是实现相关甚至
-	// UB，跨架构不可靠），回绕值可能恰好相等造成静默错误解码（）。
-	// Trunc 精确判断是否整数，不受溢出影响。
-	if value != math.Trunc(value) {
-		return fmt.Errorf("FlexInt: 非整数数值 %q", text)
-	}
-	// 超出 int64 可表示范围的整数字面量（2^63..，如 2^64 时间戳/ID）同样
-	// 拒绝——FlexInt 底层是 Go int，服务端字段不可能合法返回如此大数，
-	// 静默回绕为负值会污染后续业务判断。注意 float64 在 2^53 后不能精确
-	// 表示相邻整数，float64(math.MaxInt64) 实际等于 2^63（舍入），因此
-	// 用 >= 判上界（2^63 恰好到达时 int64 转换也溢出）。
-	if value >= float64(math.MaxInt64) || value < float64(math.MinInt64) {
-		return fmt.Errorf("FlexInt: 数值超出 int 范围 %q", text)
-	}
-	*f = FlexInt(value)
+	*f = FlexInt(v)
 	return nil
 }
 

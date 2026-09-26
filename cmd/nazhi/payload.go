@@ -5,10 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"math"
 	"os"
 	"sort"
 	"strings"
+
+	"github.com/Wenaixi/nazhi-cli/pkg/types"
 )
 
 const maxPayloadSize = 16 << 20
@@ -68,25 +69,18 @@ func parseJSONObjectPayload(ctx context.Context, raw string) ([]byte, error) {
 }
 
 // PayloadPositiveIDValid 校验 update payload 携带正数 id。
-// 兼容 float64（encoding/json 默认）与 json.Number 两种解码产物。
-// 跨命令通用：honor update + typical-case update 共享同一契约。
+// 整数判定口径委派 types.NormalizeIntegerValue（与 FlexInt / parseFlexInt
+// / honorMapInt64 / firstInt64 共用同一实现，含 2^63 上界拒绝），
+// 本函数只追加「必须为正数」这条业务判定。
 //
-// float64 分支用 math.Trunc 判整数并拒绝 ≥2^63（与 FlexInt 同口径，）：
-// 旧实现 `v == float64(int64(v))` 对 2^53..2^63 区间的整数字面量（float64 精度
-// 不足以区分相邻整数）会在 int64 转换回绕后恰好相等而静默误判。
+// 2^63-1 判负的依据：float64(math.MaxInt64) 舍入后恰等于 2^63，
+// 该字面量经 int64 转换会溢出为负值，必须拒绝。
 func PayloadPositiveIDValid(payload map[string]any) bool {
-	switch v := payload["id"].(type) {
-	case float64:
-		if v != math.Trunc(v) || v <= 0 || v >= float64(math.MaxInt64) {
-			return false
-		}
-		return true
-	case json.Number:
-		n, err := v.Int64()
-		return err == nil && n > 0
-	default:
+	id, err := types.NormalizeIntegerValue(payload["id"])
+	if err != nil {
 		return false
 	}
+	return id > 0
 }
 
 // unknownUpdatePayloadKeys 返回 payload 顶层 JSON 中不在允许键集合内的键名（稳定排序）。

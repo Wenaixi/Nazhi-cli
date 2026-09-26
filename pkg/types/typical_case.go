@@ -39,7 +39,9 @@ type AddTypicalCasePayload struct {
 	AttachmentName string `json:"attachmentName"`         // 附件文件名（上传后获得）
 }
 
-// flexStringFromNumber 解析 string/number 原始 JSON 为规范字符串代码。
+// flexStringFromNumber 把数字类字段归一为字符串码：前端表单初始值可能是
+// 字符串，列表回填可能是 number，浮点整值也需识别。判定口径委派
+// NormalizeInteger，只在本函数内追加字段名前缀便于定位。
 func flexStringFromNumber(raw json.RawMessage, field string) (string, bool, error) {
 	if len(raw) == 0 {
 		return "", false, nil
@@ -48,6 +50,7 @@ func flexStringFromNumber(raw json.RawMessage, field string) (string, bool, erro
 	if len(data) == 0 || bytes.Equal(data, []byte("null")) {
 		return "", false, nil
 	}
+	// 引号形态原样取文本（表单用户输入的代码字符串），不做数值判定。
 	if data[0] == '"' {
 		var s string
 		if err := json.Unmarshal(data, &s); err != nil {
@@ -55,21 +58,11 @@ func flexStringFromNumber(raw json.RawMessage, field string) (string, bool, erro
 		}
 		return strings.TrimSpace(s), true, nil
 	}
-	var n json.Number
-	if err := json.Unmarshal(data, &n); err != nil {
-		return "", false, fmt.Errorf("%s: 期望字符串或数字，得到 %s: %w", field, string(data), err)
-	}
-	if i, err := n.Int64(); err == nil {
-		return strconv.FormatInt(i, 10), true, nil
-	}
-	f, err := n.Float64()
+	v, err := NormalizeInteger(data)
 	if err != nil {
-		return "", false, fmt.Errorf("%s: 无法解析 number %q: %w", field, n.String(), err)
+		return "", false, fmt.Errorf("%s: %w", field, err)
 	}
-	if f != float64(int64(f)) {
-		return "", false, fmt.Errorf("%s: 期望整数，得到 %v", field, f)
-	}
-	return strconv.FormatInt(int64(f), 10), true, nil
+	return strconv.FormatInt(v, 10), true, nil
 }
 
 // UnmarshalJSON 兼容前端表单初始 attachmentId:""。
@@ -173,86 +166,19 @@ type TypicalCaseListResult struct {
 }
 
 // parseFlexInt 解析前端可能返回为数字、数字字符串、浮点 1.0、null、空串的整数字段。
-// 空/null 归零；带空格字符串会 trim；浮点仅接受整数值，非整数返回错误。
+// 空/null 归零；带空格字符串会 trim；判定口径委派 NormalizeInteger。
 func parseFlexInt(raw json.RawMessage) (int, error) {
-	if len(raw) == 0 {
-		return 0, nil
-	}
-	data := bytes.TrimSpace(raw)
-	if len(data) == 0 || bytes.Equal(data, []byte("null")) {
-		return 0, nil
-	}
-	if data[0] == '"' {
-		var s string
-		if err := json.Unmarshal(data, &s); err != nil {
-			return 0, err
-		}
-		s = strings.TrimSpace(s)
-		if s == "" {
-			return 0, nil
-		}
-		n, err := strconv.Atoi(s)
-		if err != nil {
-			return 0, fmt.Errorf("期望整数，得到 %q: %w", s, err)
-		}
-		return n, nil
-	}
-	var n json.Number
-	if err := json.Unmarshal(data, &n); err != nil {
-		return 0, fmt.Errorf("期望整数，得到 %s: %w", string(data), err)
-	}
-	if i, err := n.Int64(); err == nil {
-		return int(i), nil
-	}
-	f, err := n.Float64()
+	v, err := NormalizeInteger(raw)
 	if err != nil {
-		return 0, fmt.Errorf("无法解析数值 %q: %w", n.String(), err)
+		return 0, err
 	}
-	if f != float64(int64(f)) {
-		return 0, fmt.Errorf("期望整数，得到 %v", f)
-	}
-	return int(f), nil
+	return int(v), nil
 }
 
 // parseFlexInt64 解析 attachmentId 等 int64 字段：数字/数字字符串/null/空串均兼容。
+// 判定口径委派 NormalizeInteger，与 parseFlexInt 共用同一实现。
 func parseFlexInt64(raw json.RawMessage) (int64, error) {
-	if len(raw) == 0 {
-		return 0, nil
-	}
-	data := bytes.TrimSpace(raw)
-	if len(data) == 0 || bytes.Equal(data, []byte("null")) {
-		return 0, nil
-	}
-	if data[0] == '"' {
-		var s string
-		if err := json.Unmarshal(data, &s); err != nil {
-			return 0, err
-		}
-		s = strings.TrimSpace(s)
-		if s == "" {
-			return 0, nil
-		}
-		n, err := strconv.ParseInt(s, 10, 64)
-		if err != nil {
-			return 0, fmt.Errorf("期望整数，得到 %q: %w", s, err)
-		}
-		return n, nil
-	}
-	var n json.Number
-	if err := json.Unmarshal(data, &n); err != nil {
-		return 0, fmt.Errorf("期望整数，得到 %s: %w", string(data), err)
-	}
-	if i, err := n.Int64(); err == nil {
-		return i, nil
-	}
-	f, err := n.Float64()
-	if err != nil {
-		return 0, fmt.Errorf("无法解析数值 %q: %w", n.String(), err)
-	}
-	if f != float64(int64(f)) {
-		return 0, fmt.Errorf("期望整数，得到 %v", f)
-	}
-	return int64(f), nil
+	return NormalizeInteger(raw)
 }
 
 // UnmarshalJSON 使 TypicalCaseRecord 的 type/role/level/attachmentId 兼容 int 与 string 数字。

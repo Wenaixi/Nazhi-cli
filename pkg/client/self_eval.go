@@ -5,9 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math"
 	"net/http"
-	"strconv"
 	"strings"
 
 	"github.com/Wenaixi/nazhi-cli/pkg/types"
@@ -260,43 +258,24 @@ func firstString(m map[string]any, keys ...string) string {
 	return ""
 }
 
+// firstInt64 按 keys 顺序取首个可归一为整数的 id 值。
+// 判定口径委派 types.NormalizeIntegerValue。
+//
+// 关键语义：某个 key 的值存在但不可归一（非整数、越界、非数值）时
+// 直接返回 0，不再尝试后续 key——而非整值的 id 没有有效值，继续查
+// 下一个 key 会把「id 非法」误报成「id 缺失后取到了备用字段」。
+// 键不存在或值为 null 时才继续查下一个 key。
 func firstInt64(m map[string]any, keys ...string) int64 {
 	for _, key := range keys {
 		value, ok := m[key]
 		if !ok || value == nil {
 			continue
 		}
-		switch v := value.(type) {
-		case float64:
-			// 非整 float64 静默 int64(v) 截断（4.7→4）丢精度。
-			// 对齐 FlexInt 的 math.Trunc 判定：非整值忽略（ID 无有效值），
-			// 不产生截断结果，返回 0 继续查下一个 key。
-			if v != math.Trunc(v) {
-				return 0
-			}
-			return int64(v)
-		case float32:
-			if v != float32(math.Trunc(float64(v))) {
-				return 0
-			}
-			return int64(v)
-		case int:
-			return int64(v)
-		case int64:
-			return v
-		case int32:
-			return int64(v)
-		case json.Number:
-			i, err := v.Int64()
-			if err == nil {
-				return i
-			}
-		case string:
-			i, err := strconv.ParseInt(strings.TrimSpace(v), 10, 64)
-			if err == nil {
-				return i
-			}
+		i, err := types.NormalizeIntegerValue(value)
+		if err != nil {
+			return 0
 		}
+		return i
 	}
 	return 0
 }
