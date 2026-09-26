@@ -2,10 +2,8 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"sync/atomic"
 
 	"github.com/spf13/cobra"
@@ -51,9 +49,7 @@ func printEnvelope(e *envelope.Envelope) {
 	if e.Message != "" {
 		e.Message = logx.RedactBody(e.Message)
 	}
-	enc := json.NewEncoder(os.Stdout)
-	enc.SetIndent("", "  ")
-	if err := enc.Encode(e); err != nil {
+	if err := processOutputSink().writeOut(e); err != nil {
 		markError()
 		if !quiet {
 			printError(fmt.Errorf("序列化 envelope 失败: %w", err))
@@ -195,11 +191,11 @@ func printErrorWithCode(err error, httpCode int) {
 	if err == nil {
 		return
 	}
-	// depth 守卫：递归调用只在 depth==0 时触发，避免 stderr fd 关闭时死循环。
+	// depth 守卫：递归调用只在 depth==0 时触发，避免错误通道不可写时死循环。
 	if printErrorDepth.Add(1) > 1 {
-		// 二次调用（兜底路径又失败）→ 直接降级为 fmt.Fprintf，不再递归
+		// 二次调用（兜底路径又失败）→ 直接降级为纯文本，不再递归
 		if !quiet {
-			_, _ = fmt.Fprintf(os.Stderr, "ERROR: %s\n", redactErrorMessage(err))
+			processOutputSink().writeErrLine("ERROR: " + redactErrorMessage(err) + "\n")
 		}
 		printErrorDepth.Add(-1)
 		return
@@ -211,10 +207,8 @@ func printErrorWithCode(err error, httpCode int) {
 
 	// quiet 模式下只标记退出码，不写 stderr
 	if !quiet {
-		enc := json.NewEncoder(os.Stderr)
-		enc.SetIndent("", "  ")
-		if enc.Encode(e) != nil {
-			// stderr 写入失败时无法输出信封，但退出码仍必须反映原始错误。
+		if writeErr := processOutputSink().writeErrJSON(e); writeErr != nil {
+			// 错误通道写入失败时无法输出信封，但退出码仍必须反映原始错误。
 			pendingExitCode.Store(int32(e.ExitCode()))
 			printErrorWithCode(fmt.Errorf("printError JSON 编码失败: %w", err), httpCode)
 			return
@@ -230,7 +224,7 @@ func printErrorWithCode(err error, httpCode int) {
 // 避免 verbose 日志被错误接收方误解析为 JSON 错误。
 func printVerbose(format string, args ...any) {
 	if verbose && !quiet {
-		fmt.Fprintf(os.Stderr, "[verbose] "+format+"\n", args...)
+		processOutputSink().writeErrLine(fmt.Sprintf("[verbose] "+format+"\n", args...))
 	}
 }
 
@@ -248,5 +242,5 @@ func printPrompt(prompt string) {
 	if !isTerminalStdin() {
 		return
 	}
-	fmt.Fprint(os.Stderr, prompt)
+	processOutputSink().writeErrLine(prompt)
 }

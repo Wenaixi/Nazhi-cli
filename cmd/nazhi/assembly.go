@@ -148,7 +148,7 @@ func warnToStderr(msg string) {
 	if quiet {
 		return
 	}
-	fmt.Fprint(os.Stderr, msg)
+	processOutputSink().writeErrLine(msg)
 }
 
 // resolveTimeoutSec 解析最终生效的 HTTP 超时秒数：flag 显式值优先，
