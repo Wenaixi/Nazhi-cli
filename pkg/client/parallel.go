@@ -39,7 +39,7 @@ type collectDimsOpts struct {
 	// maxDims 是维度数上界，<=0 表示不钳制。
 	maxDims int
 	// propagateDimCancel 为真时，fn 返回的 context 错误向 errgroup 传播
-	//（透传路径需要：让 g.Wait 走 cancel 分支以保住 ErrRetryable 可重试
+	// （透传路径需要：让 g.Wait 走 cancel 分支以保住 ErrRetryable 可重试
 	// 语义，否则 cancel 被错误列表吞掉后统一包装为 ErrBusinessRejected）。
 	// 为假时（结构化路径）fn 的错误一律只记录、不传播——「单个维度失败
 	// 不中断其他维度」是该路径的既有契约。
