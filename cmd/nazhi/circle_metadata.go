@@ -1,9 +1,10 @@
 package main
 
 import (
+	"context"
 	"fmt"
 
-	"github.com/Wenaixi/nazhi-cli/pkg/envelope"
+	"github.com/Wenaixi/nazhi-cli/pkg/client"
 	"github.com/spf13/cobra"
 )
 
@@ -16,26 +17,21 @@ var circleTypesCmd = &cobra.Command{
 	Args:    cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
 		dimensionID, _ := cmd.Flags().GetInt64("dimension-id")
-		if dimensionID <= 0 {
-			printParamError(fmt.Errorf("--dimension-id 必须为正整数"))
-			return
-		}
 		pid, _ := cmd.Flags().GetString("pid")
-		c, token, err := buildBizClient(cmd)
-		if err != nil {
-			printParamError(err)
-			return
-		}
-		printVerbose("正在获取写实类别 dimensionId=%d...", dimensionID)
-		items, err := c.GetCircleTypes(cmd.Context(), token, dimensionID, pid)
-		if err != nil {
-			printError(fmt.Errorf("获取写实类别失败: %w", err))
-			return
-		}
-		if items == nil {
-			items = []map[string]any{}
-		}
-		printEnvelope(envelope.Success(items))
+		runReadOp(cmd, readOpMode{
+			verboseMsg:  fmt.Sprintf("正在获取写实类别 dimensionId=%d...", dimensionID),
+			errorPrefix: "获取写实类别失败",
+			validate: func(*cobra.Command) error {
+				if dimensionID <= 0 {
+					return fmt.Errorf("--dimension-id 必须为正整数")
+				}
+				return nil
+			},
+			fetch: func(ctx context.Context, c *client.Client, token string) (any, error) {
+				return c.GetCircleTypes(ctx, token, dimensionID, pid)
+			},
+			success: readListSuccess,
+		})
 	},
 }
 
@@ -48,25 +44,20 @@ var circleTasksCmd = &cobra.Command{
 	Args:    cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
 		typeID, _ := cmd.Flags().GetInt64("type-id")
-		if typeID <= 0 {
-			printParamError(fmt.Errorf("--type-id 必须为正整数"))
-			return
-		}
-		c, token, err := buildBizClient(cmd)
-		if err != nil {
-			printParamError(err)
-			return
-		}
-		printVerbose("正在获取类别下写实任务 typeId=%d...", typeID)
-		items, err := c.GetCircleTasks(cmd.Context(), token, typeID)
-		if err != nil {
-			printError(fmt.Errorf("获取类别下写实任务失败: %w", err))
-			return
-		}
-		if items == nil {
-			items = []map[string]any{}
-		}
-		printEnvelope(envelope.Success(items))
+		runReadOp(cmd, readOpMode{
+			verboseMsg:  fmt.Sprintf("正在获取类别下写实任务 typeId=%d...", typeID),
+			errorPrefix: "获取类别下写实任务失败",
+			validate: func(*cobra.Command) error {
+				if typeID <= 0 {
+					return fmt.Errorf("--type-id 必须为正整数")
+				}
+				return nil
+			},
+			fetch: func(ctx context.Context, c *client.Client, token string) (any, error) {
+				return c.GetCircleTasks(ctx, token, typeID)
+			},
+			success: readListSuccess,
+		})
 	},
 }
 
@@ -80,36 +71,17 @@ var circleImagesCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		page, _ := cmd.Flags().GetInt("page")
 		pageSize, _ := cmd.Flags().GetInt("page-size")
-		if page <= 0 {
-			printParamError(fmt.Errorf("--page 必须为正整数"))
-			return
-		}
-		if pageSize <= 0 {
-			printParamError(fmt.Errorf("--page-size 必须为正整数"))
-			return
-		}
-		// --page-size 上钳 500（对齐 honor list / typical-case list 的
-		// maxPageSize 纪律——服务端单页上限 500，超限透传被静默截断会让分页
-		// 脚本以错误的 pageSize 计算页数）。
-		if pageSize > maxPageSize {
-			printParamError(fmt.Errorf("--page-size 不能超过 %d（服务端单页上限）", maxPageSize))
-			return
-		}
-		c, token, err := buildBizClient(cmd)
-		if err != nil {
-			printParamError(err)
-			return
-		}
-		printVerbose("正在获取写实图片 page=%d pageSize=%d...", page, pageSize)
-		items, err := c.GetCircleImages(cmd.Context(), token, page, pageSize)
-		if err != nil {
-			printError(fmt.Errorf("获取写实图片失败: %w", err))
-			return
-		}
-		if items == nil {
-			items = []map[string]any{}
-		}
-		printEnvelope(envelope.Success(items))
+		runReadOp(cmd, readOpMode{
+			verboseMsg:  fmt.Sprintf("正在获取写实图片 page=%d pageSize=%d...", page, pageSize),
+			errorPrefix: "获取写实图片失败",
+			validate: func(*cobra.Command) error {
+				return validatePaginationFlags(page, pageSize)
+			},
+			fetch: func(ctx context.Context, c *client.Client, token string) (any, error) {
+				return c.GetCircleImages(ctx, token, page, pageSize)
+			},
+			success: readListSuccess,
+		})
 	},
 }
 
@@ -122,25 +94,20 @@ var circleDictCmd = &cobra.Command{
 	Args:    cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
 		cateCode, _ := cmd.Flags().GetInt("cate-code")
-		if cateCode <= 0 {
-			printParamError(fmt.Errorf("--cate-code 必须为正整数"))
-			return
-		}
-		c, token, err := buildBizClient(cmd)
-		if err != nil {
-			printParamError(err)
-			return
-		}
-		printVerbose("正在获取系统字典 cateCode=%d...", cateCode)
-		items, err := c.GetDictList(cmd.Context(), token, cateCode)
-		if err != nil {
-			printError(fmt.Errorf("获取系统字典失败: %w", err))
-			return
-		}
-		if items == nil {
-			items = []map[string]any{}
-		}
-		printEnvelope(envelope.Success(items))
+		runReadOp(cmd, readOpMode{
+			verboseMsg:  fmt.Sprintf("正在获取系统字典 cateCode=%d...", cateCode),
+			errorPrefix: "获取系统字典失败",
+			validate: func(*cobra.Command) error {
+				if cateCode <= 0 {
+					return fmt.Errorf("--cate-code 必须为正整数")
+				}
+				return nil
+			},
+			fetch: func(ctx context.Context, c *client.Client, token string) (any, error) {
+				return c.GetDictList(ctx, token, cateCode)
+			},
+			success: readListSuccess,
+		})
 	},
 }
 

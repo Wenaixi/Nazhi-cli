@@ -95,19 +95,10 @@ var honorListCmd = &cobra.Command{
 		// 披露的「先校后建」派）。
 		pageNo, _ := cmd.Flags().GetInt("page")
 		pageSize, _ := cmd.Flags().GetInt("page-size")
-		// 分页参数非负守卫：负值透传会发出 pageNo=-1 等异常请求；
-		// 0 同样非法——circle_metadata.go:83-89 同形状参数要求 >0，
-		// 对齐为 ≤0 拒绝（400/exit3），与正数契约统一。
-		if pageNo <= 0 || pageSize <= 0 {
-			printParamError(errors.New("--page 与 --page-size 必须为正整数"))
-			return
-		}
-		// --page-size 上钳 500（对齐 SDK defaultSubmittedPageSize，
-		// 实测服务端 pageSize 上限 500）。超限透传会被服务端静默截断为 500，
-		// 分页脚本以错误的 pageSize 计算页数拿到截断数据却不自知——以参数
-		// 错误拒绝（400/exit3），与 ≤0 守卫同族。
-		if pageSize > maxPageSize {
-			printParamError(errors.New("--page-size 不能超过 500（服务端单页上限）"))
+		// 分页纪律由 validatePaginationFlags 单点持有：正整数守卫与
+		// maxPageSize 上钳的错误文案由常量派生，改上界时文案自动跟随。
+		if err := validatePaginationFlags(pageNo, pageSize); err != nil {
+			printParamError(err)
 			return
 		}
 
