@@ -26,10 +26,8 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
-	"sync"
 
 	"github.com/Wenaixi/nazhi-cli/pkg/types"
-	"golang.org/x/sync/errgroup"
 )
 
 // rawListBytes 返回 dataList 的原始字节。dataList 缺失时返回 nil。
@@ -540,61 +538,19 @@ func (c *Client) FetchTasksJSON(ctx context.Context, token string) (json.RawMess
 
 	headers := c.bizHeaders(token)
 
-	activeDims := make([]types.Dimension, 0, len(dimensions))
-	for _, dim := range dimensions {
-		if dim.ID == 0 {
-			continue
-		}
-		activeDims = append(activeDims, dim)
-	}
-	if len(activeDims) == 0 {
+	// 并发 fan-out、保序落槽与取消传播由 collectDims 内核承担
+	// （与结构化路径 FetchTasks 共用同一内核，不再各写一份）。
+	// 本路径的差异：维度级 context 错误向 errgroup 传播并记入 dimErrs，
+	// 供后续 partial 分支拼出可重试语义；并发上限与维度数上钳沿用既有口径。
+	results, dimErrs, gErr := collectDims(ctx, dimensions, fetchTasksConcurrentLimit, collectDimsOpts{
+		maxDims:            maxFetchTasksDims,
+		propagateDimCancel: true,
+		recordCancelled:    true,
+	}, func(gctx context.Context, dim types.Dimension) ([]byte, error) {
+		return c.fetchTasksDimensionJSON(gctx, dim, headers)
+	})
+	if len(results) == 0 {
 		return []byte("[]"), nil
-	}
-	// 维度数上界钳制（对齐 maxTotalPage 纪律）——getDimensions 的
-	// 维度数来自服务端声明，恶意值驱动全维度并发拉取×单页 4MB 累积无预算。
-	// 128 远超任何真实学校维度集（通常 <10），截断保留前 128 维并 Warn。
-	if len(activeDims) > maxFetchTasksDims {
-		slog.Warn("FetchTasksJSON: 维度数超过钳制上限，截断到前 128 维",
-			"dims", len(activeDims), "max", maxFetchTasksDims)
-		activeDims = activeDims[:maxFetchTasksDims]
-	}
-
-	// 使用索引切片按维度顺序收集结果，保持维度顺序确定性。
-	// channel-based 收集顺序取决于 goroutine 调度，结果顺序不可预测。
-	results := make([][]byte, len(activeDims))
-	dimErrs := make([]error, 0, len(activeDims))
-	var mu sync.Mutex
-
-	// 使用 errgroup 控制并发，限制最多 8 路并发，与 FetchTasks 保持一致
-	g, gctx := errgroup.WithContext(ctx)
-	limit := len(activeDims)
-	if limit > fetchTasksConcurrentLimit {
-		limit = fetchTasksConcurrentLimit
-	}
-	g.SetLimit(limit)
-
-	for i, dim := range activeDims {
-		dim := dim
-		idx := i
-		g.Go(func() error {
-			// context 取消后直接 propagate，防止 cancel 被 dimErrs 吞掉后
-			// 统一包装为 ErrBusinessRejected，丢失 ErrRetryable 可重试语义。
-			// 对齐 FetchTasks 的 isContextError / ErrRetryable 分流。
-			if err := gctx.Err(); err != nil {
-				return err
-			}
-			raw, err := c.fetchTasksDimensionJSON(gctx, dim, headers)
-			if err != nil {
-				// 维度级 ctx 错误也要 propagate，让 g.Wait 走 cancel 分支
-				if isContextError(err) {
-					return err
-				}
-				appendLocked(&mu, &dimErrs, err)
-				return nil // 业务错误记录到 dimErrs，不取消其他维度
-			}
-			results[idx] = raw
-			return nil
-		})
 	}
 
 	// 先按维度顺序拼装已有结果，供 cancel / partial 路径复用
@@ -634,7 +590,8 @@ func (c *Client) FetchTasksJSON(ctx context.Context, token string) (json.RawMess
 		return buf.Bytes(), totalPages
 	}
 
-	if err := g.Wait(); err != nil {
+	if gErr != nil {
+		err := gErr
 		if isContextError(err) {
 			merged, n := assemble()
 			if n > 0 {
@@ -653,16 +610,9 @@ func (c *Client) FetchTasksJSON(ctx context.Context, token string) (json.RawMess
 
 	if totalPages == 0 {
 		if len(dimErrs) > 0 {
-			// 分离 dimErrs 中可能残留的 ctx 错误（防御性）
-			var bizErrs []error
-			var cancelledCount int
-			for _, de := range dimErrs {
-				if isContextError(de) {
-					cancelledCount++
-					continue
-				}
-				bizErrs = append(bizErrs, de)
-			}
+			// 错误分类与结构化路径共用同一口径（classifyDimErrors），
+			// 不再在本路径手写第二份判定循环。
+			bizErrs, _, cancelledCount := classifyDimErrors(dimErrs)
 			if len(bizErrs) == 0 && cancelledCount > 0 {
 				return nil, fmt.Errorf("%w: FetchTasksJSON 全部维度因 context 取消失败: %w",
 					ErrRetryable, errors.Join(dimErrs...))
@@ -673,17 +623,7 @@ func (c *Client) FetchTasksJSON(ctx context.Context, token string) (json.RawMess
 	}
 
 	if len(dimErrs) > 0 {
-		var bizErrs []error
-		var ctxErrs []error
-		var cancelledCount int
-		for _, de := range dimErrs {
-			if isContextError(de) {
-				cancelledCount++
-				ctxErrs = append(ctxErrs, de)
-				continue
-			}
-			bizErrs = append(bizErrs, de)
-		}
+		bizErrs, ctxErrs, cancelledCount := classifyDimErrors(dimErrs)
 		var cancelPlaceholder error
 		if cancelledCount > 0 {
 			cancelPlaceholder = fmt.Errorf("%w: %d 个维度因 context 取消而失败", ErrRetryable, cancelledCount)
