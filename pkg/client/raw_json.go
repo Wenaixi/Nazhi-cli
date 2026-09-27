@@ -546,9 +546,18 @@ func (c *Client) FetchTasksJSON(ctx context.Context, token string) (json.RawMess
 		buf.WriteByte('[')
 		first := true
 		totalPages := 0
-		// 累积字节预算（对齐 getCirclesJSON 的 maxAssembleBuffer 纪律）。
-		// 各维度单页最大 maxResponseBodySize（4MB）×维度数可单请求累积上 GB；
-		// 超出预算后停止追加，返回已合并的合法 JSON 前缀。
+		// 累积字节预算（maxAssembleBuffer），与 getCirclesJSON 用同一常量与
+		// 同一截断形态，但**位置不同**，不是同量级纪律：
+		//
+		// - getCirclesJSON 在发翻页请求**之前**用 estimatePagesBudgeted 预估
+		//   并拦截，本路径的预算判在 assemble() 内，即所有维度请求发完、
+		//   分片全部驻留之后，只约束输出侧不约束传输侧。
+		// - 驻留由另两道闸钉成常数上界：维度闸（collectDims 的 maxDims，
+		//   发请求前截断维度列表）× 单维限读（maxResponseBodySize 4MiB），
+		//   最坏 128×4MiB=512MiB。实测同等恶意服务端下写实路径堆峰值
+		//   11.1MiB（只发 1 次请求）、本路径 776MiB（发 128 次）——
+		//   差约 70 倍，故「对齐」仅指共用常量与截断形态，不指风险同量级。
+		//   契约由 fetch_tasks_residency_test.go 锁定。
 		assembledLen := 0
 		for _, raw := range results {
 			if len(raw) == 0 {

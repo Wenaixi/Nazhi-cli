@@ -235,13 +235,18 @@ var WithToken = withURLGuard("WithToken", func(c *Client, v string) { c.pendingT
 //   - n > maxSubmittedPageSize：拒绝设置并 warn，保持当前值
 //   - 其余：设置每页请求条数
 //
-// 上界的必要性：翻页路径用 `maxTotalPage * pageSize` 作为容量钳制上界
-// （submitted.go）。pageSize 无界时该乘法会在 int 上回绕为负，使钳制失效
-// 并让后续 make 拿到负容量而 panic——32 位平台 pageSize>21474 即触发，
-// 64 位平台需更大的 n。本选项是公开 API，调用方可能传入任意值。
+// 上界的必要性：翻页路径的容量上界是「钳制页数 × pageSize」（见
+// submitted.go 的 maxSubmittedCapacityCeiling 与随后的条数闸）。该上界
+// 必须在本选项这里就被限制，否则 pageSize 无界会让容量上界随调用方
+// 输入膨胀：本选项是公开 API，调用方可能传入任意值。
+//
+// 注意成因与钳制的比较方式：submitted.go 已改为除法比较
+// （capacity/maxTotalPage > pageSize），使乘法回绕不再发生——因此
+// 「pageSize 极大导致 make 拿到负容量」是已修缺陷的历史成因，不是
+// 当前行为。本选项的价值是防容量上界膨胀，不是防乘法溢出。
 //
 // 上界取值远高于服务端实际上限 500（实测 pageSize=10000 被服务端截断为
-// 500），此处只作为溢出防线，不改变正常取值范围。
+// 500），此处只作为容量膨胀防线，不改变正常取值范围。
 func WithSubmittedPageSize(n int) Option {
 	return func(c *Client) {
 		if n <= 0 {
