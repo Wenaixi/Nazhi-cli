@@ -63,8 +63,13 @@ var typicalCaseListCmd = &cobra.Command{
 		// 分页纪律由 validatePaginationFlags 单点持有（honor list 同款）：
 		// 正整数守卫与 maxPageSize 上钳的错误文案由常量派生。
 		// status 合法值为 0/1/2/3（0 未审核 / 1 通过 / 2 驳回 / 3 全部·默认，
-		// 前端 classiccanter.vue el-option 相同）；status=-1 虽非法，但为避免
-		// 破坏现有用户脚本（可能用 -1 表达「全部」），此处不校验 status。
+		// 前端 classiccanter.vue el-option 相同）。判定由 SDK 侧的
+		// TypicalCaseStatus.Valid 在发请求前完成，归 400 / 退出码 3。
+		//
+		// 此前此处刻意不校验，理由是「避免破坏可能用 -1 表达全部的用户脚本」。
+		// 该理由无据：全仓、文档与前端下拉均无 -1 这一取值，脚本若真依赖它，
+		// 早已被服务端当作未知状态处理。审核状态是驱动列表过滤的参数，
+		// 放行越界值只会静默返回意料之外的记录集合。
 		if err := validatePaginationFlags(pageNo, pageSize); err != nil {
 			printParamError(err)
 			return

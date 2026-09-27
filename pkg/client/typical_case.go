@@ -189,28 +189,86 @@ func (c *Client) AddTypicalCase(ctx context.Context, token string, payload types
 		"/api/studentCircleNew/addTypicalCase", http.MethodPost, payload)
 }
 
-// 典型案例审核状态（与前端 classiccanter.vue 下拉一致）。
+// TypicalCaseStatus 是典型案例审核状态，即 getTypicalCase 查询参数
+// status 的线协议取值（与前端 classiccanter.vue 的下拉一致）。
+//
+// 与写实列表类型同理：status 直接驱动服务端的列表过滤，非法值不会报错，
+// 只会静默返回一份意料之外的记录集合。做成具名类型并在发请求前 Valid，
+// 是让它不再依赖「记得只在 0..3 里选」的根本手段。
+//
+// 它与写实状态（CircleRecord.Status：0 已发布 / 1 已锁定 / 2 被撤回）
+// 不是同一概念，勿混读。
+type TypicalCaseStatus int
+
 const (
-	TypicalCaseStatusPending  = 0 // 未审核
-	TypicalCaseStatusApproved = 1 // 通过
-	TypicalCaseStatusRejected = 2 // 驳回
-	TypicalCaseStatusAll      = 3 // 全部（前端默认）
+	// TypicalCaseStatusPending 未审核。
+	TypicalCaseStatusPending TypicalCaseStatus = 0
+	// TypicalCaseStatusApproved 审核通过。
+	TypicalCaseStatusApproved TypicalCaseStatus = 1
+	// TypicalCaseStatusRejected 审核驳回。
+	TypicalCaseStatusRejected TypicalCaseStatus = 2
+	// TypicalCaseStatusAll 全部（前端默认）。
+	TypicalCaseStatusAll TypicalCaseStatus = 3
 )
+
+// Valid 报告该状态是否为平台承认的四种之一。
+func (s TypicalCaseStatus) Valid() bool {
+	switch s {
+	case TypicalCaseStatusPending, TypicalCaseStatusApproved,
+		TypicalCaseStatusRejected, TypicalCaseStatusAll:
+		return true
+	default:
+		return false
+	}
+}
+
+// typicalCaseStatusFromValue 从查询参数值反查审核状态，供 CLI 的 --status
+// 解析与 SDK 共享同一份映射，避免两侧各写一张表。
+func typicalCaseStatusFromValue(v int) (TypicalCaseStatus, error) {
+	s := TypicalCaseStatus(v)
+	if !s.Valid() {
+		return 0, fmt.Errorf("%w: 非法典型案例审核状态 %d（合法值 0=未审核 1=通过 2=驳回 3=全部）",
+			ErrInvalidPayload, v)
+	}
+	return s, nil
+}
+
+// resolveTypicalCaseStatus 收敛两个列表入口共用的状态判定：变参缺省时
+// 取「全部」，给了值则先判合法性再放行。归 ErrInvalidPayload 使调用方
+// 映射为 400 / 退出码 3，且不发出任何业务请求。
+func resolveTypicalCaseStatus(status []int) (int, error) {
+	if len(status) == 0 {
+		return int(TypicalCaseStatusAll), nil
+	}
+	s, err := typicalCaseStatusFromValue(status[0])
+	if err != nil {
+		return 0, err
+	}
+	return int(s), nil
+}
+
+// typicalCaseListPath 拼装 getTypicalCase 查询串，是两个列表入口的
+// 唯一路径来源。此前两处各自拼装同一串查询参数，结构化与透传路径
+// 改一处就会与另一处脱节。
+func typicalCaseListPath(pageNo, pageSize, status int) string {
+	return "/api/studentCircleNew/getTypicalCase?pageNo=" + strconv.Itoa(pageNo) +
+		"&pageSize=" + strconv.Itoa(pageSize) + "&status=" + strconv.Itoa(status)
+}
 
 // GetTypicalCaseList 查询典型案例列表（分页）。
 //
 // status 为可选变参：不传时默认 3（全部），与前端默认一致。
-// 取值：0 未审 / 1 通过 / 2 驳回 / 3 全部。
+// 取值：0 未审 / 1 通过 / 2 驳回 / 3 全部；非法值在发请求前归
+// ErrInvalidPayload（400 / 退出码 3），不发出任何业务请求。
 //
 // 签名：GetTypicalCaseList(ctx, token, pageNo, pageSize, status...int)
 // 多传 status 时仅用第一个。
 func (c *Client) GetTypicalCaseList(ctx context.Context, token string, pageNo, pageSize int, status ...int) (*types.TypicalCaseListResult, error) {
-	st := TypicalCaseStatusAll
-	if len(status) > 0 {
-		st = status[0]
+	st, err := resolveTypicalCaseStatus(status)
+	if err != nil {
+		return nil, err
 	}
-	path := "/api/studentCircleNew/getTypicalCase?pageNo=" + strconv.Itoa(pageNo) +
-		"&pageSize=" + strconv.Itoa(pageSize) + "&status=" + strconv.Itoa(st)
+	path := typicalCaseListPath(pageNo, pageSize, st)
 
 	resp, err := c.doBizAndDecode(ctx, token, "GetTypicalCaseList", path, http.MethodGet, nil)
 	if err != nil {
@@ -232,15 +290,15 @@ func (c *Client) GetTypicalCaseList(ctx context.Context, token string, pageNo, p
 
 // GetTypicalCaseListJSON 返回典型案例列表的原始 JSON（CLI 1:1 对齐）。
 //
-// status 变参语义同 GetTypicalCaseList：默认 3（全部）。
-// 拼装 {"records":..., "page":...}，records 和 page 均为平台原始字节。
+// status 变参语义同 GetTypicalCaseList：默认 3（全部），非法值同样在
+// 发请求前被拒。拼装 {"records":..., "page":...}，records 和 page 均为
+// 平台原始字节。
 func (c *Client) GetTypicalCaseListJSON(ctx context.Context, token string, pageNo, pageSize int, status ...int) (json.RawMessage, error) {
-	st := TypicalCaseStatusAll
-	if len(status) > 0 {
-		st = status[0]
+	st, err := resolveTypicalCaseStatus(status)
+	if err != nil {
+		return nil, err
 	}
-	path := "/api/studentCircleNew/getTypicalCase?pageNo=" + strconv.Itoa(pageNo) +
-		"&pageSize=" + strconv.Itoa(pageSize) + "&status=" + strconv.Itoa(st)
+	path := typicalCaseListPath(pageNo, pageSize, st)
 
 	resp, err := c.doBizAndDecode(ctx, token, "GetTypicalCaseListJSON", path, http.MethodGet, nil)
 	if err != nil {
