@@ -15,8 +15,12 @@ import (
 // 空串或 null。同一份「怎样才算合法整数」的判定此前散落七处实现
 // （FlexInt、parseFlexInt、parseFlexInt64、flexStringFromNumber、
 // honorMapInt64、firstInt64、PayloadPositiveIDValid），防护程度各不相同：
-// 旧写法 `v != float64(int64(v))` 在超过 int64 可表示范围的整数字面量上
-// 会因 float 到 int64 往返溢出回绕而恰好相等，造成静默的错误解码。
+// 旧写法 `v != float64(int64(v))` 缺少 int64 范围上界检查：2^63 这类
+// 超界整数字面量经往返后被拒（float64 舍入使 int64(2^63) 回绕为负数，
+// 往返比较为 false），但**负向越界字面量**（如 -2^63-1）被 float64
+// 舍入到合法下界 -2^63 而误判为合法——这才是该写法真实的放行缺口，
+// 故本模块的 NormalizeIntegerFloat 显式声明 int64 上下界并以
+// >= / < 判定（float64(math.MaxInt64) 舍入后恰等于 2^63）。
 // 本模块是这条知识的唯一实现处，调用方只声明「字段是否允许缺省」。
 //
 // 两条 interface 覆盖两类客观不同的输入形态：

@@ -142,8 +142,13 @@ var urlOptMap = map[string]urlOptDef{
 const maxPageSize = 500
 
 // warnToStderr 配置类告警统一出口：--quiet 承诺「关闭所有 stderr 输出」，
-// 此前三处 fmt.Fprintf(os.Stderr) 直写绕过了该承诺（timeout/log-level/log-format），
 // CI 以 stderr 非空为异常信号会误判。
+//
+// 历史上该承诺修过两次：首次是 timeout/log-level/log-format 三处直写被收敛
+// 到本函数；随后 main.go 关闭日志文件失败的三处 fmt.Fprintf(os.Stderr) 又
+// 绕过本函数复发第二次，现已一并收敛。两处复发都源于「新增告警时照抄
+// fmt.Fprintf 而未查本出口」，故此处不复述具体调用点，仅声明纪律：
+// 凡要写 stderr 的告警，一律经 warnToStderr，不直接操作 os.Stderr。
 func warnToStderr(msg string) {
 	if quiet {
 		return

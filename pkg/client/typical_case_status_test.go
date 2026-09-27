@@ -36,7 +36,7 @@ func TestGetTypicalCaseList_InvalidStatusRejectedBeforeRequest(t *testing.T) {
 	c := newTestClient(nil, biz, nil)
 
 	// 穷举非法区间而非逐个列举：只要将来往枚举里加值，测试仍能覆盖
-	//「枚举之外的一切」，不会因为漏列举某个具体数字而恒绿。
+	// 「枚举之外的一切」，不会因为漏列举某个具体数字而恒绿。
 	for _, st := range []int{-99, -2, -1, 4, 5, 99, 1000} {
 		_, err := c.GetTypicalCaseListJSON(context.Background(), "test-token-abc", 1, 10, st)
 		if err == nil {

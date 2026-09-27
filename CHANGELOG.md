@@ -18,6 +18,25 @@
   - **「只断言非 nil」的守卫会被退化实现骗过**：把 `normalizeEmptyList` 的 `IsNil` 判据删掉（退化成「凡切片即换成空切片」）后，仓库原有三条测试**全部通过**——因为它们只断言结果非 nil，从不检查长度与内容。一份清空所有列表的实现同样能让它们通过，而那比原来的 `data:null` 更危险（命令静默输出空列表且不报错）。补 `TestNormalizeEmptyList_PreservesNonNilContent` 断言长度与元素内容后，该变异转红。**教训：谓词写成类型枚举或只判「非 nil」时，测试必须断言内容而非形态。**
   - 典型案例的校验变异（跳过合法性判定）转红，7 个越界值全部触达服务端被逐条捕获。
 
+
+### 深度核实（第三轮候选逐条对抗式验证）
+
+七个候选经**可执行实验**（而非源码推理）逐条核实后，**只落地一处**、一处顺带订正、**五处经证据降级或证伪**。证伪结论已记入 CLAUDE.md「已证伪误报」节，复发需新证据。
+
+- **已修：`--quiet` 静默契约复发**（`cmd/nazhi/main.go`）：该承诺此前已修复过一次（`assembly.go` 注释记录了首次收敛 timeout/log-level/log-format 三处直写），随后 `main.go` 中关闭日志文件失败的三处 `fmt.Fprintf(os.Stderr, ...)` 又绕过统一的 `warnToStderr` 出口**复发第二次**。两次根因相同：新增告警时照抄 `fmt.Fprintf` 而未查统一出口。现三处收敛到 `warnToStderr`，`--quiet` 下不再有任何 stderr 泄漏（黑盒验证：`NAZHI_TIMEOUT=-1` 在 quiet 与非 quiet 下行为相反且符合契约）。
+- **顺带订正**（`pkg/types/flexnum.go`）：原注释称旧写法 `v != float64(int64(v))` 会因溢出回绕「恰好相等」造成静默错误解码——**探针实测不成立**。Go 中 `int64(2^63)` 回绕为负数，往返比较为 `false`，旧写法**正确拒绝**了 2^63。该写法真实的放行缺口是**负向越界字面量**（如 `-2^63-1` 被 float64 舍入到合法下界），注释已按实测事实改写。代码逻辑未变。
+- **证伪/降级五处**（均不构成缺陷，故不改）：平台数值归一两套口径行为**完全一致**（逐值对比 6 组用例）；版本号 grep 耦合的实际后果**仅是两处 echo 可能显示空白**（`VERSION` 不参与产物命名与 tag，CI 侧有 `exit 1` 保护）；`test/e2e` token 缓存**已被 gitignore 覆盖且有常驻门禁**；`.golangci.yml` **并无 cmd/ 豁免**（CLAUDE.md 旧记错误已订正）；文档门禁与 PII 守卫覆盖面问题属低危。
+
+### 测试
+
+- **`cmd/nazhi/stderr_discipline_test.go`**（新增守卫）：从 **AST 层面**扫描 `cmd/nazhi` 全部非测试文件，禁止任何以 `os.Stderr` 为目标的写操作（`fmt.Fprintf` / `Fprintln` / `os.Stderr.Write` 等），白名单仅 `output_sink.go`——通道实现必须现取全局指针，缓存会使既有猴补 `os.Stdout` 的测试读到空串。**既有 `TestQuiet_SuppressesConfigWarnings` 只验 `warnToStderr` 自身行为，对「有无调用方绕过它」零约束，这正是复发两次仍全绿的根因**；本守卫补上该缺口。
+  - **变异验证通过**：注入 `fmt.Fprintf(os.Stderr, "warn: 变异验证探针\n")` 后守卫变红并精确报出 `main.go:134:3`，移除后转绿。非恒绿测试。
+
+### 门禁
+
+- 修掉一处**预先存在**的 lint 阻塞（`pkg/client/typical_case_status_test.go:39` 注释缺 `//` 后空格，gocritic `commentFormatting`）。经 `git stash` 回到基线复跑确认该问题**早于本轮存在**，非本轮引入。
+- 全量门禁通过：`gofmt`、`go vet`、`golangci-lint`（退出码 0）、`go test -count=1 ./...`（全包绿）、性能门禁、`docrules`、`verify_gitignore`。
+
 ### 已否决（经证据核实，复发需新证据）
 
 - **容器回退链顺序矛盾**：结构化自评走 `returnData → dataMap → dataList`，raw 透传走 `returnData → dataList[0] → dataMap`。**不可观测**——HAR 夹具实测两个自评端点均只有 `dataMap` 有内容，矛盾仅在「双容器并存且内容不同」时显现，该形态无任何证据存在。代码与 `self_eval status --help` 均已披露该顺序与对账口径，是有意差异。

@@ -83,7 +83,7 @@ func main() {
 				printError(fmt.Errorf("关闭 Client 资源失败: %w", err))
 			}
 			if err := closeLogFiles(); err != nil {
-				fmt.Fprintf(os.Stderr, "warn: 关闭日志文件失败: %v\n", err)
+				warnToStderr(fmt.Sprintf("warn: 关闭日志文件失败: %v\n", err))
 			}
 			code := int(pendingExitCode.Load())
 			if code == 0 {
@@ -101,7 +101,7 @@ func main() {
 			printError(fmt.Errorf("关闭 Client 资源失败: %w", err))
 		}
 		if err := closeLogFiles(); err != nil {
-			fmt.Fprintf(os.Stderr, "warn: 关闭日志文件失败: %v\n", err)
+			warnToStderr(fmt.Sprintf("warn: 关闭日志文件失败: %v\n", err))
 		}
 	}()
 	// printError 不再 os.Exit，改为设 pendingExitCode。
@@ -127,7 +127,7 @@ func main() {
 			printError(fmt.Errorf("关闭 Client 资源失败: %w", err))
 		}
 		if err := closeLogFiles(); err != nil {
-			fmt.Fprintf(os.Stderr, "warn: 关闭日志文件失败: %v\n", err)
+			warnToStderr(fmt.Sprintf("warn: 关闭日志文件失败: %v\n", err))
 		}
 		// 三分退出码：
 		//   pendingExitCode 由 printEnvelope/printError 按 envelope.ExitCode() 设置：
