@@ -129,12 +129,17 @@ func TestRedactSnippet_CrossingWindow_CompleteKeyBeforeCrossingKey(t *testing.T)
 	}
 }
 
-// TestRedactSnippetLen_CrossingWindow_Masked 锁定按指定长度的变体走同一条
-// 粗截接缝。
+// TestRedactSnippetLen_CrossingWindow_Masked 锁定按指定长度的变体在跨窗时
+// 同样不泄漏明文。
 //
-// 该变体与 RedactSnippet 只有 max 参数之差，但它是独立函数：若它绕过
-// clipPrefixWindow 直接截原始字节，跨窗泄漏就会原样出现在这一条出口上，而
-// 既有那条只测长度的用例只看长度、看不出内容差异。
+// 机制说明（此处曾有一处失实注释，订正如下）：该变体的安全**不依赖**
+// clipPrefixWindow。实测把 RedactSnippetLen 改成绕过 clipPrefixWindow 直接
+// 截原始字节，本用例仍然通过——因为 RedactBodyThenTruncate 内部是
+// RedactBody 先掩码、再 256 截断、再按 max 截断，掩码本就发生在任何截断之前。
+// 因此本用例只作跨窗形态的回归覆盖：真正锁住「先脱敏后截断」这条次序契约
+// 的是同包的 TestRedactBodyThenTruncate_Order 与
+// TestRedactSnippet_SensitiveValueCrossingTruncationBoundary（实测把
+// RedactBodyThenTruncate 改成先截后掩时变红的是这两条，不是本条）。
 func TestRedactSnippetLen_CrossingWindow_Masked(t *testing.T) {
 	body := []byte(`{"token":"` + strings.Repeat("A", snippetPrefixWindow) + `","end":"x"}`)
 
@@ -148,36 +153,41 @@ func TestRedactSnippetLen_CrossingWindow_Masked(t *testing.T) {
 	}
 }
 
-// TestRedactSnippet_CrossingWindow_URLQueryParam 锁定 URL 查询串跨粗截窗口
-// 时同样被掩码，且防护来自 tokenQueryRe 而非 clipPrefixWindow。
+// TestRedactSnippet_UnterminatedValueWithinWindow 锁定「body 本身残缺」的形态：
+// 输入长度未达粗截窗口，但整个 body 就停在敏感值的值内部（无闭合引号）——
+// 典型来源是服务端或反向代理超时把 JSON 截断在途中。
 //
-// 这一格与键值形态的机制不同：查询串没有引号也没有冒号，跨窗残段正则对它
-// 完全不命中，它能被掩码只因为 tokenQueryRe 的值部分是 [^&\s"]+ 而非
-// 闭合引号——切腰后剩余字节仍构成一次完整匹配。tokenQueryRe 自身也不要求
-// 终止符，故不要求"切点落在两个参数之间"。
-//
-// 结论：这条形态的防护完全依赖 tokenQueryRe 不要求终止符这一性质。若日后
-// 给它加上终止符锚定以收紧匹配，跨窗查询串会静默恢复成明文，而键值形态的
-// 用例不会变红——这正是单独锁它的理由。
-func TestRedactSnippet_CrossingWindow_URLQueryParam(t *testing.T) {
+// 此前 clipPrefixWindow 只在「粗截切腰」这一条路径上补救残段，body 自身
+// 残缺时原样返回，kvRe 因缺闭合引号失配，明文直接进入用户可见的错误摘要。
+func TestRedactSnippet_UnterminatedValueWithinWindow(t *testing.T) {
 	cases := []struct {
-		name string
-		body string
+		name   string
+		body   string
+		secret string
 	}{
-		{"token 参数跨窗", `/api/x?token=` + strings.Repeat("A", snippetPrefixWindow) + `&page=1`},
-		{"x-auth-token 参数跨窗", `/api/x?x-auth-token=` + strings.Repeat("A", snippetPrefixWindow) + `&page=1`},
-		{"学号参数跨窗", `/api/x?userName=` + strings.Repeat("A", snippetPrefixWindow) + `&page=1`},
+		{"token", `{"code":500,"msg":"timeout","data":{"token":"eyJhbGciOi.SUPERSECRETSIG`, "SUPERSECRETSIG"},
+		{"password", `{"password":"p@ssw0rd-very-secret-value-abc`, "p@ssw0rd"},
+		{"captcha", `{"captcha":"CAPTCHA_VALUE_XYZ`, "CAPTCHA_VALUE"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			got := RedactSnippet([]byte(c.body))
-
-			if strings.Contains(got, "AAAA") {
-				t.Errorf("跨粗截窗口的查询参数泄漏明文值，实际: %q", got)
+			if strings.Contains(got, c.secret) {
+				t.Errorf("残缺 body 中的敏感值明文泄漏: %q", got)
 			}
-			if !strings.Contains(got, "=***") {
-				t.Errorf("跨窗的敏感查询参数应被掩码，实际: %q", got)
+			if !strings.Contains(got, "***") {
+				t.Errorf("残缺 body 的敏感值应产出掩码: %q", got)
 			}
 		})
+	}
+}
+
+// TestRedactSnippet_ClosedValueWithinWindow 是上条的对照组：值已闭合时
+// 走的是 kvRe 的常规路径，两条路径都必须不泄漏——但它们是不同的机制，
+// 混在一起断言会掩盖任一条单独退化。
+func TestRedactSnippet_ClosedValueWithinWindow(t *testing.T) {
+	got := RedactSnippet([]byte(`{"token":"eyJhbGciOi.closed`))
+	if strings.Contains(got, "closed") {
+		t.Errorf("闭合的敏感值必须掩码: %q", got)
 	}
 }

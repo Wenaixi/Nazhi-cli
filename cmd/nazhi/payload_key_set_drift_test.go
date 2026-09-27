@@ -225,6 +225,22 @@ func TestPayloadAllowedKeys_ExtrasAreDeclaredAndUsed(t *testing.T) {
 					"确有有意的差异请补进该组白名单并写明理由；否则说明允许集写错了键名",
 					undeclared)
 			}
+
+			// 反向：白名单项必须真的还存在于允许集里。否则白名单会养出僵尸
+			// 条目——某天有人从允许集删掉一个键，白名单仍声明着它，读代码的
+			// 人会以为「这个键仍被有意豁免」，而它其实早已无人使用。
+			var stale []string
+			for _, e := range tc.extras {
+				if _, ok := tc.allowed[strings.ToLower(e)]; !ok {
+					stale = append(stale, e)
+				}
+			}
+			sort.Strings(stale)
+			if len(stale) > 0 {
+				t.Errorf("白名单声明了、但允许集里已不存在的僵尸条目：%v\n"+
+					"请一并从该组 extras 中删除，避免读代码的人误以为它仍被有意豁免",
+					stale)
+			}
 		})
 	}
 }
@@ -295,6 +311,42 @@ func TestPayloadAllowedKeys_TaskDeprecatedKeysAreSubsetOfWireTags(t *testing.T) 
 		if _, ok := taskInputAllowedKeys[strings.ToLower(key)]; !ok {
 			t.Errorf("历史兼容键 %s 未合并进 task 族允许集", key)
 		}
+	}
+}
+
+// TestPayloadAllowedKeys_TaskDeprecatedExtrasMatchProduction 绑定自检表与生产
+// 声明：taskDeprecatedKeySetExtras 是测试内的字面量，若不与
+// taskInputDeprecatedKeys 对齐，它就是自证的空转——上面那条用例删掉生产
+// 声明里的某个键时，taskInputKeys 仍会把它兜进允许集，于是全绿。
+func TestPayloadAllowedKeys_TaskDeprecatedExtrasMatchProduction(t *testing.T) {
+	declared := taskInputDeprecatedKeys.allowed()
+	if len(declared) == 0 {
+		t.Fatal("taskInputDeprecatedKeys 允许集为空，判定基准失效")
+	}
+	inTable := make(map[string]struct{}, len(taskDeprecatedKeySetExtras))
+	var missing []string
+	for _, key := range taskDeprecatedKeySetExtras {
+		lower := strings.ToLower(key)
+		inTable[lower] = struct{}{}
+		if _, ok := declared[lower]; !ok {
+			missing = append(missing, key)
+		}
+	}
+	var extra []string
+	for key := range declared {
+		if _, ok := inTable[key]; !ok {
+			extra = append(extra, key)
+		}
+	}
+	sort.Strings(missing)
+	sort.Strings(extra)
+	if len(missing) > 0 {
+		t.Errorf("自检表声明、生产集合没有的键：%v\n"+
+			"生产声明已变，请同步 taskDeprecatedKeySetExtras", missing)
+	}
+	if len(extra) > 0 {
+		t.Errorf("生产集合有、自检表漏掉的键：%v\n"+
+			"新键必须补进自检表，否则关于历史兼容键的断言会静默失效", extra)
 	}
 }
 

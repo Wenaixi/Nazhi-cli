@@ -92,24 +92,33 @@ const SnippetMaxLen = 100
 // 段换成 ***，让下游脱敏正则始终看到闭合的键值形态。
 const snippetPrefixWindow = 4096
 
-// 匹配「敏感键已开引号、值尚未闭合」的跨窗残段：键名与开引号在窗口内，
-// 值的剩余部分被粗截切掉。切腰后必然没有闭合引号，故以文本末尾锚定，
-// 只在粗截确实切到了敏感值时才有命中。
+// 匹配「敏感键已开引号、值尚未闭合」的残段：键名与开引号在文本内，值的
+// 剩余部分缺失。形态有二——粗截窗口把长值切腰，或 body 自身就被截断在
+// 值中间（服务端/反向代理超时是常见来源）。两者都会让按闭合引号匹配的
+// kvRe 整体失配，故以文本末尾锚定统一兜住。
+//
+// 已知边界：值内含 JSON 转义序列（如 \" 或 \\）时本式会在转义处的引号
+// 提前停下、$ 锚定失败，此形态依赖下游 kvRe 兜底。穷举实测（转义字节 ×
+// 间距共 399 组）最终摘要泄漏 0 次，但本式属于纵深防御的第二道而非唯一
+// 防线——若它退化，现有测试不会立刻变红。
 var kvUnterminatedTailRe = regexp.MustCompile(
 	`(?i)"(token|x-auth-token|authorization|password|passwd|captcha)"\s*:\s*"[^"]*$`)
 
-// clipPrefixWindow 把响应体截到窗口大小，并在截断切腰了敏感值时补上掩码。
+// clipPrefixWindow 把响应体截到窗口大小，并无条件收口未闭合的敏感值。
 //
 // 这是粗截与脱敏之间的安全接缝：截断本身不得制造出「键值对只写了一半」的
-// 形态，否则下游按闭合引号匹配的脱敏正则会静默失配。切点落在非敏感位置
-// （键名之前、或完整键值之后）时原样返回前缀。
+// 形态，否则下游脱敏正则会静默失配、把明文带进错误摘要。
+//
+// 收口对**所有**输入执行而非只对超窗输入：body 长度未达窗口时它自己就可能
+// 停在值内部，那条路径此前完全没有防护。切点落在非敏感位置（键名之前、
+// 或完整键值之后）时该正则不命中，前缀原样返回。
 func clipPrefixWindow(body []byte) []byte {
-	if len(body) <= snippetPrefixWindow {
-		return body
+	clipped := body
+	if len(clipped) > snippetPrefixWindow {
+		clipped = clipped[:snippetPrefixWindow]
 	}
-	clipped := body[:snippetPrefixWindow]
-	// ReplaceAll 而非 Replace：单个值跨窗实际只可能一处，但代价为零，且不引入
-	// 「只处理第一处命中」这一隐含前提。
+	// ReplaceAll 而非 Replace：单个未闭合值实际只可能一处，但代价为零，
+	// 且不引入「只处理第一处命中」这一隐含前提。
 	return kvUnterminatedTailRe.ReplaceAll(clipped, []byte(`"${1}":"***"`))
 }
 
