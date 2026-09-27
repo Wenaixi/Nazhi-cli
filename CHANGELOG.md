@@ -26,11 +26,17 @@
 - **已修：`--quiet` 静默契约复发**（`cmd/nazhi/main.go`）：该承诺此前已修复过一次（`assembly.go` 注释记录了首次收敛 timeout/log-level/log-format 三处直写），随后 `main.go` 中关闭日志文件失败的三处 `fmt.Fprintf(os.Stderr, ...)` 又绕过统一的 `warnToStderr` 出口**复发第二次**。两次根因相同：新增告警时照抄 `fmt.Fprintf` 而未查统一出口。现三处收敛到 `warnToStderr`，`--quiet` 下不再有任何 stderr 泄漏（黑盒验证：`NAZHI_TIMEOUT=-1` 在 quiet 与非 quiet 下行为相反且符合契约）。
 - **顺带订正**（`pkg/types/flexnum.go`）：原注释称旧写法 `v != float64(int64(v))` 会因溢出回绕「恰好相等」造成静默错误解码——**探针实测不成立**。Go 中 `int64(2^63)` 回绕为负数，往返比较为 `false`，旧写法**正确拒绝**了 2^63。该写法真实的放行缺口是**负向越界字面量**（如 `-2^63-1` 被 float64 舍入到合法下界），注释已按实测事实改写。代码逻辑未变。
 - **证伪/降级五处**（均不构成缺陷，故不改）：平台数值归一两套口径行为**完全一致**（逐值对比 6 组用例）；版本号 grep 耦合的实际后果**仅是两处 echo 可能显示空白**（`VERSION` 不参与产物命名与 tag，CI 侧有 `exit 1` 保护）；`test/e2e` token 缓存**已被 gitignore 覆盖且有常驻门禁**；`.golangci.yml` **并无 cmd/ 豁免**（CLAUDE.md 旧记错误已订正）；文档门禁与 PII 守卫覆盖面问题属低危。
+- **已修：限读纪律两处漏网**（`pkg/client`）：逐处核实七个 `LimitReader` 出口后坐实两点。① **`auth.go` Login validate 是唯一超限后不 Close 的出口**——`httpDo` / `doBizGet` / 上传成功体都直 Close 放弃 keep-alive，唯独它只 return，让 `defer drainAndClose` 的 `io.Copy` **无上限续读**剩余 body。实测无限流服务端下 drain 续读 **264MB 直到服务端 EOF**，正是 `request.go` 注释警告的「恶意无限流下拖到超时才兜底」形态。② **`session.go` 的 `doGetMenu` 曾是完全无上限的 `io.ReadAll`**，为全 SDK 唯一漏网出口，且在每个新会话的激活步骤 2/3 必经（真实调用已实证）。修复后该路径的续读量为 0。
+  - 顺带把 `file.go` 两处裸字面量 `64*1024` 提为 `maxErrorBodySize` 单点常量，与 `maxResponseBodySize` 并列。限读纪律现按「**body 用途**」分两档（需完整 body 参与解码 → 4MiB；仅供错误文案摘要 → 64KB），**刻意不抽公共 helper**——统一签名只能是多分支参数形式，比各调用点直写三行更难读，且两档差别是「body 用途」这一调用点知识，不该被参数化。
+  - **不改变任何用户可见行为**：超限仍归各自的 `ErrInvalidResponse` / `ErrLoginRejected`，仅内部不再无上限续读。
 
 ### 测试
 
 - **`cmd/nazhi/stderr_discipline_test.go`**（新增守卫）：从 **AST 层面**扫描 `cmd/nazhi` 全部非测试文件，禁止任何以 `os.Stderr` 为目标的写操作（`fmt.Fprintf` / `Fprintln` / `os.Stderr.Write` 等），白名单仅 `output_sink.go`——通道实现必须现取全局指针，缓存会使既有猴补 `os.Stdout` 的测试读到空串。**既有 `TestQuiet_SuppressesConfigWarnings` 只验 `warnToStderr` 自身行为，对「有无调用方绕过它」零约束，这正是复发两次仍全绿的根因**；本守卫补上该缺口。
   - **变异验证通过**：注入 `fmt.Fprintf(os.Stderr, "warn: 变异验证探针\n")` 后守卫变红并精确报出 `main.go:134:3`，移除后转绿。非恒绿测试。
+
+- **`pkg/client/auth_login_drain_test.go`**（新增守卫）：`TestLogin_ValidateOversizedBody_ClosesWithoutDraining` 用一个「限读上限 + 持续推送」的服务端，断言 Login 超限后**服务端写入量不超过阈值**。**既有 `TestLogin_ValidateOversizedBody_Rejects` 只断言返回 `ErrLoginRejected`，而无论是否 Close 都得到同一错误——该断言对「是否无上限续读」完全无区分力**，属恒真。
+  - **变异验证异常强烈**：移除修复后该测试不是变红，而是**直接 300 秒超时**——客户端无上限 drain、服务端持续写入，两者僵持至超时。这精确复现了实测的 264MB 续读现象。恢复修复后 **0.03 秒通过**。
 
 ### 门禁
 

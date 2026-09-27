@@ -413,18 +413,38 @@ func (c *Client) httpDo(ctx context.Context, method, url string, body any, heade
 // 异常/恶意服务端内存放大的安全上限。
 const maxResponseBodySize = 4 << 20
 
-// 各调用点的限读纪律刻意不收敛为公共 helper：形状并不一致，强行统一只会
-// 造出带多个布尔开关的参数。
-//   - httpDo / doBizGet / Login validate / 上传成功体：4MiB，超限归
-//     ErrInvalidResponse
-//   - file.go 错误体：64KB，归上传/下载各自的哨兵
-//   - session.go doGetMenu：100 字节，且不归 ErrInvalidResponse——它按状态码
-//     走 classifyHTTPStatus 取哨兵，错误摘要只是附加信息
-// 三者只有「LimitReader+1 探测 → 超限直 Close」这一段形状相同，其余全是
-// 领域差异。若抽 helper，签名会变成 readBody(r, cap int, onOverflow func)
-// 之类——比三处各自三行更难读。分散的代价是注释可能与常量漂移（历史上确实
-// 发生过：本文件下方的事故记录写着「1MB 上调到 4MiB」，而 httpDo 处的注释
-// 长期仍写「封顶 1MB」），故各处注释一律引用常量名而非写死数值。
+// maxErrorBodySize 是「只为构造错误消息而读响应体」这一用途的上限。
+// 与 maxResponseBodySize 分离：那类出口需要完整 body 参与后续解码，只能
+// 给较大上限；本类出口读到的字节仅用于错误文案里的脱敏摘要，多读无益，
+// 且服务端 502/503 偶尔携带完整 HTML 堆栈这类大错误体。64KB 足够容纳
+// 可诊断信息，又把异常/被劫持服务端的内存放大挡在门外。
+//
+// 使用点：file.go 的上传/下载错误体、session.go doGetMenu 的状态码
+// 错误体。此前 file.go 两处写裸字面量 64*1024、session.go 一处完全
+// 不限读，同一口径三处表达不一。
+const maxErrorBodySize = 64 << 10
+
+// 限读纪律按「body 用途」分两档，上限各自单点持有，不抽公共 helper。
+//
+// 分档依据是读到的字节要做什么，这是两类出口唯一实质差别：
+//   - 需要完整 body 参与后续解码（httpDo / doBizGet / Login validate 的
+//     200 分支 / 上传成功体）：上限 maxResponseBodySize，超限归
+//     ErrInvalidResponse（Login 例外，归 ErrLoginRejected——认证失败
+//     与业务未处理实体不同义），并直 Close 放弃 keep-alive。
+//   - 读到的字节仅用于错误文案里的脱敏摘要（file.go 上传/下载错误体 /
+//     session.go doGetMenu 的状态码错误体）：上限 maxErrorBodySize，
+//     不做 +1 探测（无需判定超限），哨兵由 classifyHTTPStatus 给出。
+//
+// 不抽 helper 的理由：若统一签名只能是 readBody(r, cap, sentinel, closeOnOverflow)
+// 这类带多个分支参数的形式，比各调用点直写三行更难读，且两档的语义差别
+// 不是布尔开关而是「body 用途」——那属于调用点的知识，不该被参数化。
+// 真正跨调用点共享的是**上限数值**（已各自提为常量）与「先脱敏后截断」
+// 的摘要次序（由 logx.RedactSnippet 单点持有）。
+//
+// 分散的代价是注释与常量漂移，历史上确实发生过（本文件下方事故记录
+// 写着「1MB 上调到 4MiB」而 httpDo 注释长期仍写「封顶 1MB」；doGetMenu
+// 曾被注释描述为「限 100 字节」而实现完全不限读）。故各处注释一律引用
+// 常量名而非写死数值。
 
 // rawDoWithResp 执行请求并返回 *http.Response（调用者负责关闭 Body）。
 func (c *Client) rawDoWithResp(ctx context.Context, method, url string, body any, headers map[string]string, contentType string) (*http.Response, error) {

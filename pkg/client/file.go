@@ -215,7 +215,7 @@ func (c *Client) UploadFile(ctx context.Context, filePath string) (*types.Upload
 	// 先判 status code 再读 body。非 200 时只读 64KB 用于错误消息，
 	// 避免大 HTTP 错误响应的 body 全部读入内存（服务端 502/503 有时带完整 HTML 堆栈）。
 	if resp.StatusCode != http.StatusOK {
-		errBody, _ := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
+		errBody, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBodySize))
 		// 复用 request.go 的 classifyHTTPStatus 统一 sentinel 分类。
 		sentinel := classifyHTTPStatus(resp.StatusCode, ErrUploadRejected)
 		return nil, fmt.Errorf("%w: status=%d body=%s", sentinel, resp.StatusCode, logx.RedactSnippet(errBody))
@@ -384,7 +384,7 @@ func (c *Client) DownloadFile(ctx context.Context, attachmentID int64, dst strin
 
 	// 4. 状态码分类
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		errBody, _ := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
+		errBody, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBodySize))
 		sentinel := classifyHTTPStatus(resp.StatusCode, ErrInvalidResponse)
 		return fmt.Errorf("%w: status=%d body=%s", sentinel, resp.StatusCode, logx.RedactSnippet(errBody))
 	}

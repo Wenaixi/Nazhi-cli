@@ -192,6 +192,11 @@ func (c *Client) Login(ctx context.Context, req types.LoginRequest) (*types.Logi
 			httpResp.StatusCode, len(bodyBytes), err)
 	}
 	if len(bodyBytes) > maxResponseBodySize {
+		// 超限分支直 Close 放弃 keep-alive，与 httpDo / doBizGet / 上传成功体
+		// 同纪律：不 Close 则 defer drainAndClose 会 io.Copy 无上限续读剩余
+		// body。变异验证实测：移除本行后客户端与无限流服务端僵持、测试
+		// 300 秒超时（无上限 drain 时服务端续写 264MB 直到 EOF）。
+		_ = httpResp.Body.Close()
 		return nil, fmt.Errorf("%w: Login 响应体超过 %d 字节上限", ErrLoginRejected, maxResponseBodySize)
 	}
 	bodySnippet := logx.RedactSnippet(bodyBytes)

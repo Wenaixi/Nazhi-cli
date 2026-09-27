@@ -174,8 +174,15 @@ func (c *Client) doGetMenu(ctx context.Context, menuURL string, baseHeaders map[
 		// 的次序由该模块单点持有，调用方不再自行截断——此前此处用
 		// io.LimitReader 先裸截 100 字节，是全 SDK 第三种摘要截断写法，
 		// 安全性仅靠「两处恰好都是 100」这一巧合成立。
-		// 读 body 必须在 drainAndClose 之前（defer 已注册）。
-		errBody, _ := io.ReadAll(resp.Body)
+		// 读 body 必须在 drainAndClose 之前（defer 已注册）。此处只要错误
+		// 摘要、不需要完整 body，故按错误体口径限读 64KB——与 file.go 的
+		// 错误体纪律一致。此前是无上限 io.ReadAll，为全 SDK 唯一漏网出口：
+		// getMenu 在每个新会话的激活步骤 2/3 必经，被劫持或异常的服务端
+		// 可借超大错误响应放大内存。
+		errBody, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBodySize+1))
+		if len(errBody) > maxErrorBodySize {
+			_ = resp.Body.Close()
+		}
 		return fmt.Errorf("%w: ActivateSession %s getMenu 返回状态码 %d body=%s",
 			sentinel, stepLabel, resp.StatusCode, logx.RedactSnippet(errBody))
 	}
