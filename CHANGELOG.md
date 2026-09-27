@@ -2,9 +2,33 @@
 
 ## [Unreleased]
 
-本轮由第二轮架构深化扫描驱动（`improve-codebase-architecture`），把五处「同一份知识散落多处、靠注释维持一致」的区域改为单一模块承担。**不改变任何用户可见行为**（唯一例外见「修复」第一条的错误文案来源），旧接口全部保留，无 BREAKING。
+本轮由第三轮架构深化扫描驱动（`improve-codebase-architecture`）。六个候选经**对抗式核实**（默认判否、逐条找反证）后**只落地两处**，其余四处经证据否决并记入 CLAUDE.md「已证伪误报」节。**两处均改变用户可见行为**：非法 `--status` 由静默返回空列表改为参数错误。
 
-### 变更
+### 修复
+
+- **空列表归一漏掉具名切片类型**（`cmd/nazhi/read_op_runner.go`）：`normalizeEmptyList` 被写成「这条契约的唯一实现处」，但判据是**枚举已知切片类型**——类型 switch 只列了 `[]map[string]any` 与 `[]any`。本仓读命令的返回值绝大多数是**具名切片类型**（`[]types.HonorSelectOption` / `[]types.Dimension` / `[]types.HonorType`），一个都不命中；而已收编的四个命令恰好返回 `[]map[string]any`，使该守卫对现有使用者退化为恒等函数，真正会 nil 的具名类型命令则全部未被收编、各自手抄了一份归一。**守卫收编了用不上的类型，漏掉了需要它的类型。** 现改用 `reflect` 识别任意 nil 切片并构造同类型空切片，新增返回类型自动受保护；非 nil 切片原样透传。
+- **典型案例审核状态缺前置校验**（`pkg/client/typical_case.go`）：四个状态常量此前是**无类型 `int` 常规量，且全仓没有任何调用点**——既没约束任何东西，CLI 的 `--status` 也因此零校验直发服务端。`status` 直接驱动 `getTypicalCase` 的列表过滤，与写实列表类型（`CircleListType`）是同一类风险：传错值不报错，只静默返回一份意料之外的记录集合。现按同一范式收为具名类型 `TypicalCaseStatus` + `Valid()`，在发请求前判定，非法值归 `ErrInvalidPayload`（400 / 退出码 3）且不发出任何业务请求；变参缺省仍取 3（全部），合法值原样透传。
+  - CLI 此前刻意不校验，理由写的是「避免破坏可能用 `-1` 表达全部的用户脚本」。**该理由无据**：全仓、文档与前端 `classiccanter.vue` 的下拉均无 `-1` 取值。据此收口并订正了该注释。
+  - 顺带把结构化与透传两个入口各自拼装的 `getTypicalCase` 查询串收为 `typicalCaseListPath` 单点。
+
+### 测试
+
+- `TestNormalizeEmptyList_NamedSliceTypes` / `TestNormalizeEmptyList_PreservesNonNilContent`（具名切片的归一与非 nil 内容不被清空）；`TestGetTypicalCaseList_InvalidStatusRejectedBeforeRequest`（穷举越界值并断言**不发出任何业务请求**，非法值以区间穷举而非逐个列举，将来往枚举加值仍能覆盖）/ `TestGetTypicalCaseList_ValidStatusPassedThrough`。
+- **本轮两处新测试均经变异验证**，其中一处变异最初存活并促使补强了测试设计：
+  - **「只断言非 nil」的守卫会被退化实现骗过**：把 `normalizeEmptyList` 的 `IsNil` 判据删掉（退化成「凡切片即换成空切片」）后，仓库原有三条测试**全部通过**——因为它们只断言结果非 nil，从不检查长度与内容。一份清空所有列表的实现同样能让它们通过，而那比原来的 `data:null` 更危险（命令静默输出空列表且不报错）。补 `TestNormalizeEmptyList_PreservesNonNilContent` 断言长度与元素内容后，该变异转红。**教训：谓词写成类型枚举或只判「非 nil」时，测试必须断言内容而非形态。**
+  - 典型案例的校验变异（跳过合法性判定）转红，7 个越界值全部触达服务端被逐条捕获。
+
+### 已否决（经证据核实，复发需新证据）
+
+- **容器回退链顺序矛盾**：结构化自评走 `returnData → dataMap → dataList`，raw 透传走 `returnData → dataList[0] → dataMap`。**不可观测**——HAR 夹具实测两个自评端点均只有 `dataMap` 有内容，矛盾仅在「双容器并存且内容不同」时显现，该形态无任何证据存在。代码与 `self_eval status --help` 均已披露该顺序与对账口径，是有意差异。
+- **页维度并发扇出两份**：提取属 YAGNI。`collectDims` 值得提取是因为它承载**会漂移的政策**（id==0 跳过、取消传播语义、维度闸、错误分类）；页级扇出两处除 fetch 闭包与槽位类型外逐行相同，且 Go 1.22+ 逐迭代循环变量使 `pn := pageNo` 亦为冗余捕获，是机械代码而非语义。
+- **输出通道应改造成注入缝**：`outputSink` 解决的是「写哪条通道」而非注入；`processOutputSink()` 每次现取全局是**承重设计**（`version_test.go` 直接猴补 `os.Stdout` 后经 `printEnvelope` 观察输出，缓存指针会使断言读到空串；`output_test.go` 更用 EPIPE 制造写入失败，纯 buffer 注入会丢失该语义）。改造需动 41+ 个测试文件且削弱失败路径覆盖。
+- **活动类型注册表该建模进 SDK**：与 `TaskSubmitInput` godoc 及 v1.4.0 的明确决策冲突（必填规则由调用方按活动类型自行填写）；且前端**表单显示 ≠ 表单必填**，照搬 `v-if` 分支会把规则建错。
+
+### 变更（第二轮架构深化）
+
+第二轮架构深化扫描把五处「同一份知识散落多处、靠注释维持一致」的区域改为单一模块承担。**不改变任何用户可见行为**（唯一例外见该轮「修复」第一条的错误文案来源），旧接口全部保留，无 BREAKING。
+
 
 - **平台数值归一收为单一模块**（`pkg/types/flexnum.go`）：「平台可能把整数返回成数字 / 数字字符串 / 整值浮点 / 空串 / null，怎样才算合法整数」此前散落七处实现，防护程度各不相同——`FlexInt` 与 `PayloadPositiveIDValid` 有 2^63 上界检查，`parseFlexInt` 族与 `typicalCaseCodeString` 仍是会静默回绕的 `float64(int64(f))` 旧写法，`honorMapInt64` 与 `firstInt64` 用了 `math.Trunc` 但**缺上界**（大整数经 `int64(n)` 会溢出成负数）。四处注释互指「同口径」而代码各异。现由 `NormalizeInteger`（原始 JSON 字节）与 `NormalizeIntegerValue`（map 路径的 any 值）承载唯一实现，各调用点只保留自己的业务语义。**行为收紧两处**：`honorMapInt64` 与 `firstInt64` 顺带获得原先缺失的 2^63 越界拒绝；典型案例的字符串浮点（`"1.0"`）由报错改为识别，与平台返回裸浮点时的行为对齐。
 - **输出通道收为可注入值类型**（`cmd/nazhi/output_sink.go`）：全 CLI 六处直写 `os.Stdout` / `os.Stderr` 的出口改经 `outputSink`，包级函数签名与 160 处调用点零改动。此前测试要观察输出必须猴补进程全局变量（`captureStdio` 被 41 个文件、112 处复用），最该被测的「stdout 只承载成功数据」契约被放到测试面之外，且猴补全局本身是进程级竞争类别。
@@ -12,11 +36,11 @@
 - **并发维度收集收为单一内核**（`pkg/client` 的 `collectDims`）：结构化路径与透传路径此前各写一套 fan-out 与错误聚合，靠注释约定「改动一条必须同步核对另一条」维持一致，而该约定已在事实上破裂。现两条路径共用同一内核，错误分类经 `classifyDimErrors` 收口。
 - **诊断摘要收为单一入口**（`pkg/logx.RedactSnippet`）：摘要长度此前是各调用点传入的字面量 `100`，散落七处且接口上不可见；`session.go` 另有一种裸 `LimitReader` 写法，安全性仅靠「两处恰好都是 100」成立。现长度与「先脱敏后截断」的次序由模块单点持有，SDK 内私有实现已删除。
 
-### 修复
+### 修复（第二轮架构深化）
 
 - **分页上界错误文案与常量脱钩**：`honor list` 与 `typical-case list` 把 `500` 硬编码进「不能超过 500」的错误文案，而 `circle images` 用常量格式化——改 `maxPageSize` 时前两者会对用户谎报上限，而全仓无一条测试断言该文案。现三处统一走 `validatePaginationFlags`，文案由常量派生。
 
-### 测试
+### 测试（第二轮架构深化）
 
 - 新增五组守卫测试：数值归一的接受/拒绝形态穷举与越界不回绕、输出通道的跨出口归属对照、读命令的列表归一与分页边界、并发收集内核的保序与取消传播开关、脱敏摘要的跨截断边界不泄漏。
 - **本轮全部新增测试均经变异验证**（注入生产缺陷确认测试变红），其中四处变异最初存活并促使补强了测试设计，记录如下以备复发参考：
