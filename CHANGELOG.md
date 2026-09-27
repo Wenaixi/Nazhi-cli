@@ -14,7 +14,7 @@
 - **TaskInput 接口收缩为 7 方法**（`pkg/types/task.go`）：新增 `ActivityFields` 聚合（24 活动字段，非 wire 类型）与 `GetActivityFields()`，29 个 Getter 回声收敛；具体类型保留 deprecated 薄壳 Getter（外部 `input.GetName()` 仍编译通过，公开 SDK 零破坏）+ 新增 `SetAddressLevel` 供 CLI flag 覆盖。
 - **envelope 部分完成语义化**（`pkg/envelope/envelope.go`）：`PartialData`（207）/`Pulse`（429）替代泛型 `Partial`（保留 deprecated）；circle_list_mode/task_list 的 207 字面量与 session 冷却的 429 不再共用外观相同构造器。
 - **空语义分裂消除**（`pkg/client/raw_json.go` + `cmd/nazhi/session.go`）：ActivateSessionJSON 透传 `ErrEmptyUserInfo`（对齐 GetMyInfoJSON），session activate 的不可达 `ErrEmptyUserInfo` 分支与 `len(raw)==0 → get_my_info_nil` 死路径删除，两条 CLI 路径统一 `get_my_info_empty`。
-- **recoverx 输出可注入**（`internal/recoverx`）：新增 `SetPanicWriter`，panic 摘要/stack 默认 os.Stderr、测试/宿主可注入 buffer，stderr 纪律扩展到 internal 层；`SetQuiet` 保留（pkg/client 无法感知 CLI flag 是真实跨层依赖）。
+- ~~**recoverx 输出可注入**~~（**第五轮已回退此项，见下节**：核实发现 `SetPanicWriter` 全仓零调用点，且其 nil 复位分支会静默丢弃 panic stack，已整条删除）
 - **CLI 与 flexnum 数值差异显式锚定**（`cmd/nazhi/task_payload_json.go`）：big.Rat 判定提为具名 `normalizeTaskInputNumericCode` 并声明「与 flexnum 的合法集合差异是有意设计」，`TestTaskInputNumericCodeDivergenceFromFlexnum` 锁定（CLI 接受 2^63+、flexnum 拒绝）。
 - **典型案例 attachmentId 收口 flexnum**（`pkg/types/typical_case.go`）：手写 `strconv.ParseInt` 分支改经 `NormalizeInteger`；键缺失不清零语义保留在调用点。
 - **宽松类型族收口归一**（`pkg/types/flexjson.go`）：PlayRoleCode number 分支改经 `NormalizeInteger`、IntList 字符串元素改经 `NormalizeIntegerText`；`flex_fields.go` 三份 hours UnmarshalJSON 骨架收敛为 `normalizeHoursField` 单点。
@@ -36,6 +36,22 @@
 - **`writeOpMode` 泛型化不做**：`applyFlags` 已走泛型带类型约束（编译期有保障），`call` 的断言与 `decode` 相距 3 行；泛型化会迫使 `runWriteOp` 一并泛型化，传播成本高于收益。
 - **读命令 runner 覆盖缺口范围远小于初判**：13 个文件不走 `runReadOp`，但其中登录/会话/版本/上传下载等语义上本就该走别的路径；真实不一致仅 `self_eval status` 与 `self_eval grad status` 一对。未新增 AST 守卫——为一个尚未发生的偏离引入新维护面，得不偿失。
 - **「4 步激活链测试知识泄漏 20+ 处」为数量级错误**：实测真正重复的只是 4 个语义相近的 warmup helper（根因是内外测试包分裂），「几乎每份都带 schoolId 注释」不成立（同时含 `getMenu` 与 `schoolId` 的测试文件为 0 个）。
+
+### 第五轮架构深化（8 项候选，落地 5 项、订正 3 项、否决 1 项）
+
+同属 `improve-codebase-architecture` 全量扫描。八个候选经八路子代理独立核实后，**主代理逐条亲自复核**（含探针程序、变异测试与真实守卫注入），最终落地五项代码改动、三项注释订正、否决一项。commit `b81957b`。
+
+**用户可见行为变更**：无。全部为内部收敛与订正，现有命令的输出与退出码不变。
+
+- **读命令空语义判据修正**（`cmd/nazhi/read_op_runner.go`）：`normalizeEmptyList` 原按「是不是 nil 切片」反射判空，会把不透传的 `json.RawMessage`（底层同为 `[]byte`）误当记录列表。实测后果：nil RawMessage 被换成非 nil 零长值，既让调用点 `== nil` 判据失效，又非合法 JSON，信封序列化报 `unexpected end of JSON input`，stdout 空白且退出码 1。判据改为「是不是记录列表」（`isRecordList`），RawMessage 原样返回交由各命令 success 闭包按自身载荷语义决定空形态。当前无线上可达路径（两道独立兜底），属静态风险收口。
+- **输出通道守卫修漏网 + 补 stdout 对称面**（`cmd/nazhi/stderr_discipline_test.go`）：旧判据有两处叠加缺陷——`os.Stderr.Write` 的接收者是 `SelectorExpr` 而非 `Ident`，被类型断言整类跳过；case 内又重复要求方法名为 `Stderr`，对 `Write` 恒假。实测注入 `os.Stderr.Write`/`WriteString`/`fmt.Fprintf` 三形态确认修复前漏网、修复后全部报出。两侧现共用 `scanChannelWrites`，并补「未扫到文件即失败」的正向断言。**stdout 侧此前完全无守卫**，而「错误一律写 stderr」这条纪律历史上被违反 29 处。
+- **删除恒绿失实测试**（`cmd/nazhi/main_test.go`）：`TestMain_NoDoubleErrorOutput` 复制生产那一行 `printEnvelope` 并断言 stdout 含 error，而生产早已改走 `printParamError` → stderr。变异验证：换成真实调用即报「stderr 应为空，实际含 error 信封」。改为直接验证 `printParamError` 本身，不再复制 `main.go` 控制流。
+- **会话回退门控清理**（`pkg/client/session.go`）：出口门控两支 `return` 字面相同、CAS 布尔被丢弃，收敛为一次无条件置位（零行为变化）。注释承诺的「仅在缓存实际补全后置位」在代码中不存在，且其描述的跨 token 交错在当前锁结构下**不可达**（`RecordSuccess` 只在持锁路径内被调，回退全程在锁外），属虚构场景，已删除该论证。
+- **业务码判定收敛**（`pkg/client/request.go`）：`CheckCode→ErrBusinessRejected` 段在同文件相距约 90 行处逐字符重复，收为 `checkBizCode` 单点。订正 `decodeOrInvalidResponse` godoc（自称「五处」却只列四个名字、实际仅两处调用）与 `doBizGetRaw` godoc 的残句。上传域刻意不合并（`ErrUploadRejected` 语义不同）。
+- **三处失实注释订正**：`pkg/types/self_eval.go` 与 `pkg/client/self_eval.go` 互相声明「口径一致」实则不同（id 严格失败 vs 容忍归零、空白串处理有别），但三条容器的实际产出都是「成功但 ID=0」，非用户可见缺陷，仅订正注释；`pkg/client/raw_json.go` 补页号槽位的调用方不变式说明（经核实「无边界防护」反而是本仓主流形态，且服务端只能抬高页号、已被双重钳制，不加静默截断以免把显式契约变成隐式容忍）。
+- **删除 `recoverx` 死缝**（`internal/recoverx`）：`SetPanicWriter` 全仓零调用点，其「传 nil 恢复默认」分支存入动态值 nil 的 interface（类型断言成功但接收者为 nil），使此后 panic 摘要与 stack 静默丢失。整条删除并订正包注释「3 条 panic-recover 路径」为实际的 2 条。`SetQuiet` 保留（`pkg/client` 无法感知 CLI flag 是真实跨层依赖）。
+- **否决：24 个活动字段映射表化**。核实证明 `buildTaskPayload` 的 Trim 写法不对称零行为差异、字段集各处逐行一致且零漂移；改映射表将丢失编译期字段名检查并付运行代价，收益为负。
+
 
 ### 测试
 
