@@ -84,28 +84,47 @@ const SnippetMaxLen = 100
 //
 // 粗截的是原始字节前缀而非脱敏后的文本：摘要最终只保留 SnippetMaxLen 字符，
 // 若先对整个响应体（例如 4MB）做 string() 分配与两遍全量正则，代价与最终
-// 产出不成比例。安全性依赖「窗口远大于摘要上限」——窗口内的敏感值一定被
-// 完整匹配并掩码，窗口外的字节根本不会进入输出。
+// 产出不成比例。
+//
+// 安全性不能只靠「窗口远大于摘要上限」这一条论证：粗截会把跨界的敏感值切成
+// 半截，而 kvRe 形如 `"token":"[^"]*"` 要求闭合引号，缺了就整体失配、掩码不
+// 生效，摘要开头即是明文。因此粗截一律经 clipPrefixWindow——它把切腰的那一
+// 段换成 ***，让下游脱敏正则始终看到闭合的键值形态。
 const snippetPrefixWindow = 4096
+
+// 匹配「敏感键已开引号、值尚未闭合」的跨窗残段：键名与开引号在窗口内，
+// 值的剩余部分被粗截切掉。切腰后必然没有闭合引号，故以文本末尾锚定，
+// 只在粗截确实切到了敏感值时才有命中。
+var kvUnterminatedTailRe = regexp.MustCompile(
+	`(?i)"(token|x-auth-token|authorization|password|passwd|captcha)"\s*:\s*"[^"]*$`)
+
+// clipPrefixWindow 把响应体截到窗口大小，并在截断切腰了敏感值时补上掩码。
+//
+// 这是粗截与脱敏之间的安全接缝：截断本身不得制造出「键值对只写了一半」的
+// 形态，否则下游按闭合引号匹配的脱敏正则会静默失配。切点落在非敏感位置
+// （键名之前、或完整键值之后）时原样返回前缀。
+func clipPrefixWindow(body []byte) []byte {
+	if len(body) <= snippetPrefixWindow {
+		return body
+	}
+	clipped := body[:snippetPrefixWindow]
+	// ReplaceAll 而非 Replace：单个值跨窗实际只可能一处，但代价为零，且不引入
+	// 「只处理第一处命中」这一隐含前提。
+	return kvUnterminatedTailRe.ReplaceAll(clipped, []byte(`"${1}":"***"`))
+}
 
 // RedactSnippet 把响应体归一为脱敏后的诊断摘要。
 //
 // 这是错误消息附带诊断摘要的唯一入口：调用方不再决定长度、不再决定脱敏
 // 与截断的先后顺序，只声明「我要一份诊断摘要」。
 func RedactSnippet(body []byte) string {
-	if len(body) > snippetPrefixWindow {
-		body = body[:snippetPrefixWindow]
-	}
-	return RedactBodyThenTruncate(body, SnippetMaxLen)
+	return RedactBodyThenTruncate(clipPrefixWindow(body), SnippetMaxLen)
 }
 
 // RedactSnippetLen 是按指定长度取诊断摘要的变体，供确需不同长度的调用方
 // 使用；默认路径应走 RedactSnippet。
 func RedactSnippetLen(body []byte, max int) string {
-	if len(body) > snippetPrefixWindow {
-		body = body[:snippetPrefixWindow]
-	}
-	return RedactBodyThenTruncate(body, max)
+	return RedactBodyThenTruncate(clipPrefixWindow(body), max)
 }
 
 // RedactValue 按 key 判断是否需掩码。
