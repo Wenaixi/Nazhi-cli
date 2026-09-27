@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
@@ -78,6 +79,80 @@ func TestNormalizeEmptyList_PassesThroughNonList(t *testing.T) {
 	in := payload{Name: "示例"}
 	if got := normalizeEmptyList(in); got != any(in) {
 		t.Errorf("非列表结果应原样透传，得到 %#v", got)
+	}
+}
+
+// TestNormalizeEmptyList_NamedSliceTypes 锁定具名切片类型的归一。
+//
+// 归一判据此前是「枚举已知切片类型」：类型 switch 只列了 []map[string]any
+// 与 []any，具名切片类型一个都不命中。而本仓读命令的返回值绝大多数是具名
+// 切片类型（[]types.HonorSelectOption、[]types.Dimension、[]types.HonorType），
+// 它们恰好都没被收编，于是各自在调用点手抄了一遍归一——守卫收编了用不上的
+// 类型，漏掉了真正需要它的类型。
+//
+// 判据若改为「识别任意 nil 切片」，新增返回类型自动受保护，调用点也无法漏写。
+type namedSliceProbe struct{ Name string }
+
+func TestNormalizeEmptyList_NamedSliceTypes(t *testing.T) {
+	// 具名切片类型：本仓读命令返回值的真实形态。
+	var opts []namedSliceProbe
+	got := normalizeEmptyList(opts)
+
+	// 用反射判定「是否为非 nil 空切片」，而不是断言具体类型——
+	// 实现可以返回同类型空切片，也可以返回其它可安全遍历的空切片。
+	rv := reflect.ValueOf(got)
+	if !rv.IsValid() {
+		t.Fatalf("normalizeEmptyList(nil 的具名切片) 返回 nil 界面，期望非 nil 空列表")
+	}
+	if rv.Kind() != reflect.Slice {
+		t.Fatalf("归一结果应为切片，实际 %v", rv.Kind())
+	}
+	if rv.IsNil() {
+		t.Fatalf("归一后仍为 nil 切片，序列化会输出 null")
+	}
+	if rv.Len() != 0 {
+		t.Fatalf("归一后长度应为 0，实际 %d", rv.Len())
+	}
+
+	// 端到端：信封 JSON 必须是空数组而非 null（用户实际看到的东西）。
+	raw, err := json.Marshal(readListSuccess(got))
+	if err != nil {
+		t.Fatalf("信封序列化失败: %v", err)
+	}
+	if s := string(raw); strings.Contains(s, "null") {
+		t.Errorf("归一后信封仍含 null: %s", s)
+	}
+}
+
+// TestNormalizeEmptyList_PreservesNonNilContent 锁定归一只动 nil 切片，
+// 不碰有内容的切片。
+//
+// 这条断言是变异验证逼出来的：把实现里的 IsNil 判据删掉（退化成「只要是
+// 切片就换成空切片」）后，原有三条测试全绿——因为它们只断言「非 nil」，
+// 从不检查长度与内容，一份「把所有切片清空」的实现同样能让它们通过。
+// 归一若变成清空，命令会静默输出空列表而不报错，比原来的 data:null 更危险。
+func TestNormalizeEmptyList_PreservesNonNilContent(t *testing.T) {
+	// 具名切片类型 + 有内容：必须原样透传，长度与元素都不变。
+	nonNil := []namedSliceProbe{{Name: "甲"}, {Name: "乙"}}
+	got := normalizeEmptyList(nonNil)
+	rv := reflect.ValueOf(got)
+	if rv.Len() != 2 {
+		t.Fatalf("非 nil 切片长度应保持 2，实际 %d（归一不得清空有内容的列表）", rv.Len())
+	}
+	back, ok := got.([]namedSliceProbe)
+	if !ok {
+		t.Fatalf("归一应保留原类型，实际 %T", got)
+	}
+	if back[0].Name != "甲" || back[1].Name != "乙" {
+		t.Errorf("元素内容应原样保留，实际 %#v", back)
+	}
+
+	// 非 nil 的空切片：本就序列化为 []，原样透传即可。
+	empty := []namedSliceProbe{}
+	if got := normalizeEmptyList(empty); !reflect.ValueOf(got).IsNil() {
+		if reflect.ValueOf(got).Len() != 0 {
+			t.Errorf("非 nil 空切片应保持长度 0")
+		}
 	}
 }
 

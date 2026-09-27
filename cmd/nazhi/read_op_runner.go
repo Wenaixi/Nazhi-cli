@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"reflect"
 
 	"github.com/Wenaixi/nazhi-cli/pkg/client"
 	"github.com/Wenaixi/nazhi-cli/pkg/envelope"
@@ -91,21 +92,28 @@ func runReadOp(cmd *cobra.Command, mode readOpMode) {
 // normalizeEmptyList 把取数结果中的 nil 切片归一为空数组。
 //
 // 平台在无数据时可能返回 null 或空数组，Go 侧都解成 nil 切片；直接封进
-// Success 信封会输出 "data":null。本函数是这条契约的唯一实现处。
+// Success 信封会输出 "data":null，下游 jq '.data[]' 对 null 报错退出。
+// 本函数是这条契约的唯一实现处。
+//
+// 判据是「识别 nil 切片」而非「枚举已知切片类型」。枚举写法只覆盖
+// []map[string]any 与 []any，而本仓读命令的返回值绝大多数是具名切片类型
+// （[]types.HonorSelectOption、[]types.Dimension、[]types.HonorType 等），
+// 一个都不命中——守卫收编了用不上的类型，漏掉了真正需要它的类型，导致调用点
+// 各自手抄一份归一。反射判据让新增返回类型自动受保护，调用点也无法漏写。
+//
+// 非 nil 的空切片原样返回：它本就序列化为 []，构造一个同类型新切片没有收益。
 func normalizeEmptyList(result any) any {
-	switch v := result.(type) {
-	case nil:
+	if result == nil {
 		return []map[string]any{}
-	case []map[string]any:
-		if v == nil {
-			return []map[string]any{}
-		}
-	case []any:
-		if v == nil {
-			return []any{}
-		}
 	}
-	return result
+	rv := reflect.ValueOf(result)
+	if rv.Kind() != reflect.Slice || !rv.IsNil() {
+		return result
+	}
+	// 保留原类型，只把 nil 换成同长度的空切片，
+	// 这样调用方与断言看到的仍是它传进来的那个具名类型。
+	empty := reflect.MakeSlice(rv.Type(), 0, 0)
+	return empty.Interface()
 }
 
 // validatePaginationFlags 校验分页参数合法性，是分页纪律的单一实现处。
