@@ -27,6 +27,24 @@
 
 - `TestTaskInputNumericCodeDivergenceFromFlexnum`（CLI/flexnum 差异锚定）；`session_nil_guard_test.go` 守卫更新为识别 `err != nil`（新空语义契约）；`cmd/nazhi/session_nil_guard_test.go` 的 AST 扫描 switch 补 `nolint:exhaustive`（只关心 EQL/NEQ 两类守卫操作符）。全部新增/更新测试经变异验证或行为矩阵确认，非恒绿。
 
+### 第四轮之后的复扫（五个候选全部经可运行证据复核后否决）
+
+同属 `improve-codebase-architecture` 全量扫描，但**结论与上一节相反**：五个候选逐一用探针程序与变异测试复核后，**无一达到改行为的门槛**，净落地仅两条契约测试与两处注释订正（commit `597e512`）。逐条记录以免后续轮次重复提出：
+
+- **「写实编辑回填断裂」证伪**（本轮最贵的误判）：`CircleRecord.Level`（`int`）与 `TaskEditInput.Level`（`string`）的类型反转属实，但 `cmd/nazhi/task_payload_json.go` 的 `normalizeTaskInputJSON` 已在 CLI 边界把 `hours`/`level`/`checkResult`/`playRole` 的数字形态归一为字符串，其注释本就写明「兼容前端编辑回填的数字字段」。走真实 CLI 路径复测，`{"level":5,"checkResult":1}` → `Level="5"`、`CheckResult="1"`，解码零错误。**用户侧无断裂**，无需转换器。
+- **「`FetchTasksJSON` 字节闸位置与写实路径相反」降级为非缺陷**：预算判在 `assemble()` 内确在所有维度请求发完之后，但维度闸是**前置**的（`collectDims` 在 errgroup 启动前截断维度列表），叠加单维 4MiB 限读，驻留有 512MiB 常数上界，属「有界资源放大」而非无界 OOM。实测同等恶意服务端下写实路径堆峰值 11.1MiB（发 1 次请求）、该路径 776MiB（发 128 次）。
+- **`writeOpMode` 泛型化不做**：`applyFlags` 已走泛型带类型约束（编译期有保障），`call` 的断言与 `decode` 相距 3 行；泛型化会迫使 `runWriteOp` 一并泛型化，传播成本高于收益。
+- **读命令 runner 覆盖缺口范围远小于初判**：13 个文件不走 `runReadOp`，但其中登录/会话/版本/上传下载等语义上本就该走别的路径；真实不一致仅 `self_eval status` 与 `self_eval grad status` 一对。未新增 AST 守卫——为一个尚未发生的偏离引入新维护面，得不偿失。
+- **「4 步激活链测试知识泄漏 20+ 处」为数量级错误**：实测真正重复的只是 4 个语义相近的 warmup helper（根因是内外测试包分裂），「几乎每份都带 schoolId 注释」不成立（同时含 `getMenu` 与 `schoolId` 的测试文件为 0 个）。
+
+### 测试
+
+- 新增 `pkg/client/fetch_tasks_residency_test.go` 两条契约测试，锁住任务维度取数的驻留上界：维度闸必须**前置**（判据是实际发出的请求数而非结果条目数——闸若后置，结果仍是 128 条但服务端已被索取 200 次），以及单维响应体受 4MiB 限读约束。**补上此前的缺口**：单维限读只在上传路径有测试，任务维度路径无人断言，缺它则无法排除「维度数合规但单维体积无界」。两条均经变异验证：注入「闸后置」后报「实际发出 200 次」，放大限读阈值后报 5325891 字节。
+
+### 文档
+
+- 订正两处停留在旧世界的失实注释：`WithSubmittedPageSize` 的 godoc 仍把「乘法回绕致 make 负容量」描述为现行成因（`submitted.go` 早已改为除法比较加饱和兜底，该 Option 的真实价值是防容量上界膨胀）；`FetchTasksJSON` 字节预算注释自称「对齐 `getCirclesJSON` 纪律」，实测风险差 70 倍，「对齐」仅指共用常量与截断形态。
+
 第三轮（历史）：
 
 ### 修复
