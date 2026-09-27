@@ -53,7 +53,7 @@ func itoa(n int) string {
 // TestBuildClient_DefaultsToNoError 验证 buildClient 在没有任何 flag 的情况下
 // 不返回错误（与 buildBizClient 不同——它会因缺 token 报错）。
 func TestBuildClient_DefaultsToNoError(t *testing.T) {
-	// t.Setenv 自动恢复环境变量，避免裸 Unsetenv 污染进程级环境影响后续测试（T10）
+	// t.Setenv 自动恢复环境变量，避免裸 Unsetenv 污染进程级环境影响后续测试
 	t.Setenv("NAZHI_SSO_BASE", "")
 	t.Setenv("NAZHI_BASE_URL", "")
 	t.Setenv("NAZHI_TIMEOUT", "")

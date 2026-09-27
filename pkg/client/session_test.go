@@ -915,7 +915,7 @@ func TestSessionManager_Activate_Backoff(t *testing.T) {
 	})
 }
 
-// ─── C5/C6 修复回归 ───
+// ─── 回归修复保护 ───
 
 // TestSessionBackoff_ErrorsIsPenetratesToOriginalErr 回归测试 C6：
 // 验证 backoff 错误的错误链穿透能力。
@@ -950,7 +950,7 @@ func TestSessionBackoff_ErrorsIsPenetratesToOriginalErr(t *testing.T) {
 		t.Errorf("必须包装 ErrSessionBackoff，err=%v", err)
 	}
 
-	// 2. 必须能穿透到 sm.lastErr（C6 修复关键断言）
+	// 2. 必须能穿透到 sm.lastErr关键断言
 	if !errors.Is(err, originalErr) {
 		t.Errorf("%%v 断链未修复：errors.Is(err, ErrNetwork) = false，err=%v", err)
 	}

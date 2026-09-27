@@ -13,7 +13,7 @@ import (
 // TestSessionBackoffErrorMessage_DoesNotContainFullToken 回归测试：
 // backoff 命中的错误消息不得内嵌完整 JWT token。
 //
-// 背景（十三域审计 P1）：session.go 曾以 %q 把完整 token 拼进错误消息，
+// 背景：session.go 曾以 %q 把完整 token 拼进错误消息，
 // 经 CLI printError 漏斗直达 stderr 信封，task list 的 207 Partial 分支
 // 更送进 stdout 数据流。token 对接收者无诊断价值（用户自己传入），
 // 且 redact.go 的 tokenQueryRe/kvRe 均不匹配 %q 引号包裹形态，

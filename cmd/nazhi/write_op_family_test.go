@@ -3,7 +3,7 @@ package main
 // 本文件锁定 CLI 写操作族（honor add / typical-case submit / user update）
 // 收敛到共享 runner 后的命令级契约。
 //
-// 架构深化（C2）：这三个命令与 task submit/edit/preview 共享同一 6 步骨架，
+// 历史：这三个命令与 task submit/edit/preview 共享同一 6 步骨架，
 // 但此前各自内联实现（honor add 与 typical-case submit 同形，user update
 // 用独立 unknownUserUpdateKeys）。收敛到 runWriteOp + writeOpMode 后，
 // 以下行为必须保持不变（用户可见契约）：

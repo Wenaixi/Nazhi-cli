@@ -20,7 +20,7 @@ import (
 // TestSubmitTask_TooManyPicturesSkipsUpload 回归测试：
 // 图片超过 2 张上限时必须在任何上传发生前拒绝。
 //
-// 背景（十三域审计 P2-D）：原实现在上传循环之后才校验 len(pictureList)>2，
+// 背景：原实现在上传循环之后才校验 len(pictureList)>2，
 // 传 3 个 ImagePaths 会先把 3 张全部上传成功再返回 ErrInvalidPayload，
 // 已上传附件成为服务端孤儿（无删除接口可回收）。前端 el-upload :limit=2
 // 在选择阶段即拦截，不产生该副作用。

@@ -8,7 +8,7 @@ import (
 // TestFlexInt_DecodeMatrix 回归测试：FlexInt 必须兼容平台可能出现的
 // number、浮点字面量（4.0）、数字字符串与 null 四类形状。
 //
-// 背景（十三域审计 P2-A）：UserInfo 的 Seat/YouthLeagueFlag/Nation/IDType
+// 背景：UserInfo 的 Seat/YouthLeagueFlag/Nation/IDType
 // 曾用裸 int，encoding/json 拒绝 4.0→int 导致 DecodeReturnData 整页失败，
 // 被 GetMyInfo fallback 链吞成 ErrEmptyUserInfo（与 HonorRecord.score=4.0
 // 同款已踩坑）。FlexInt 与 FlexFloat/IntList 同族归一。

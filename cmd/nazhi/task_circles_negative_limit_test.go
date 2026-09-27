@@ -13,7 +13,7 @@ import (
 // TestTaskCirclesCommands_RejectNegativeLimit 回归测试：
 // 负数 --limit 必须以参数错误（退出码 3）拒绝，不发业务请求。
 //
-// 背景（十三域审计 P2-N）：守卫谓词 (offset>0 && limit<=0) || offset<0
+// 背景：守卫谓词 (offset>0 && limit<=0) || offset<0
 // 放行 offset=0+负 limit 组合，SDK 侧 limit<=0 走全量分支——分页脚本以
 // 公式计算 limit 得负时无声拿到全量数据，输出体积失控但退出码 0。
 // 与正/负 offset 守卫同语义。

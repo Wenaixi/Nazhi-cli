@@ -11,7 +11,7 @@ import (
 // TestTaskSubmitCmd_MissingPayloadTakesPrecedenceOverMissingToken 回归测试：
 // task submit 与 task edit 校验顺序一致——payload 缺失先于 token 缺失报告。
 //
-// 背景（十三域审计 P2-E）：submit 原实现先 buildBizClient 后校验 payload，
+// 背景：submit 原实现先 buildBizClient 后校验 payload，
 // 双参数缺失时报 token 错误（printParamError→stderr）；edit 相反报 payload
 // （printEnvelope→stderrstdout）。同因不同果且通道分裂。统一为先校验 payload。
 func TestTaskSubmitCmd_MissingPayloadTakesPrecedenceOverMissingToken(t *testing.T) {
@@ -45,7 +45,7 @@ func TestTaskSubmitCmd_MissingPayloadTakesPrecedenceOverMissingToken(t *testing.
 
 // TestHonorAddCmd_MissingPayloadTakesPrecedenceOverMissingToken 回归测试：
 // honor add 与 task submit/edit、typical-case、user update 的校验顺序一致——
-// payload 缺失先于 token 缺失报告。十五域审计发现 honor add 先 buildBizClient
+// payload 缺失先于 token 缺失报告。同批复核发现 honor add 先 buildBizClient
 // 后校验 payload，双参数缺失时报「--token 为必填」而非「--payload 为必填」，
 // 与同族七个命令的收敛规范相悖。
 func TestHonorAddCmd_MissingPayloadTakesPrecedenceOverMissingToken(t *testing.T) {
@@ -77,7 +77,7 @@ func TestHonorAddCmd_MissingPayloadTakesPrecedenceOverMissingToken(t *testing.T)
 
 // TestTaskPreviewCmd_MissingPayloadTakesPrecedenceOverMissingToken 回归测试：
 // task preview 遵守与 submit/edit 相同的「先校验 payload 后建客户端」不变式。
-// 十五域审计发现 preview 是该不变式的漏网第三处（submit/edit 已在十三域 P2-E 修复）。
+// 同批复核发现 preview 是该不变式的漏网第三处（submit/edit 已在同批修复）。
 func TestTaskPreviewCmd_MissingPayloadTakesPrecedenceOverMissingToken(t *testing.T) {
 	cmd := &cobra.Command{Use: "task-preview"}
 	cmd.SetContext(context.Background())

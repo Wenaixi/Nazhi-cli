@@ -12,7 +12,7 @@ import (
 // TestSubmitSelfEvaluationStructured_RejectsEmptyForm 回归测试：
 // 空表单（nil 或 {}）必须在发出任何请求前被拒绝。
 //
-// 背景（十三域审计 P2-I）：原实现直接序列化入参，Go 调用方传 nil/{} 时
+// 背景：原实现直接序列化入参，Go 调用方传 nil/{} 时
 // 会静默发出 {"studentComment":"{}"} 的合法但空载荷请求，服务端 code=1
 // 即记为一次成功提交。前端用户面对的是已渲染的 11 个输入框，
 // 全空提交在浏览器是可见操作；脚本空载荷则无声产生脏数据。

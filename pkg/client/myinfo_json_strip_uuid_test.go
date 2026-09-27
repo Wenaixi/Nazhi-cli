@@ -13,7 +13,7 @@ import (
 // GetMyInfoJSON 与 ActivateSessionJSON 是 CLI whoami/GetMyInfoJSON 的输出通道，
 // 序列化前必须剔除 StudentUuid（学生 UUID/密码）敏感值——前端 modifyBox.vue:185 读取后
 // 显式清零即佐证该字段属只写不读的敏感载体。剔除用浅拷贝（禁止原地置空——info 与
-// sm.cachedUserInfo 共享指针，见 session.go P0-A7 教训），结构化 GetMyInfo 返回值不受影响
+// sm.cachedUserInfo 共享指针（见 session.go 的共指针约束），结构化 GetMyInfo 返回值不受影响
 // （Go 调用方自行裁决是否消费该字段）。
 func TestGetMyInfoJSON_StripsStudentUuid(t *testing.T) {
 	biz := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

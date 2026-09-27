@@ -2,7 +2,7 @@ package main
 
 // write_op_runner.go：CLI 写操作命令的共享控制流 runner。
 //
-// 架构深化（C2）：task submit/edit/preview、honor add/update、
+// 历史：task submit/edit/preview、honor add/update、
 // typical-case submit/update、user update 此前各内联一份 6 步骨架
 // （读 payload → 判空 → 建客户端 → 解析 → 拒未知键 → 解码 → 覆盖 flag →
 // 调用 → envelope），submit 与 edit 33 行逐字重复、preview 内部分叉两份、
@@ -11,7 +11,7 @@ package main
 //
 // 与 circleListMode（列表族）的关键差异：写操作族保持「先本地校验再建
 // 客户端」——缺 --payload / 坏 payload / 未知键等参数错误不应依赖
-// token/base-url 配置是否正确（P2-E 十三域审计确立的不变式）。
+// token/base-url 配置是否正确（错误优先次序不变式）。
 import (
 	"context"
 	"encoding/json"

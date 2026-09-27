@@ -2,7 +2,7 @@ package main
 
 // 本文件锁定 CLI 写操作族（task submit/edit/preview）共享控制流的收敛后契约。
 //
-// 架构深化（C2）：task submit/edit/preview 三个命令此前各内联一份 6 步骨架
+// 历史：task submit/edit/preview 三个命令此前各内联一份 6 步骨架
 // （读 payload → 判空 → 建客户端 → 解析 → 拒未知键 → 解码 → 覆盖 flag → 调用 →
 // envelope），submit 与 edit 33 行逐字重复、preview 内部分叉两份。收敛为
 // 共享 runner 后，以下命令级行为必须保持不变（这些是用户可见契约）：

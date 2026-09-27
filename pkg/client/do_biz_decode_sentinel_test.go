@@ -13,7 +13,7 @@ import (
 // 200 + 非 JSON body（nginx 维护页 / WAF 挑战页）的解码失败必须携带
 // ErrInvalidResponse 哨兵。
 //
-// 背景（十三域审计 P2-F）：非 2xx 分支经 classifyHTTPStatus 恒有哨兵，
+// 背景：非 2xx 分支经 classifyHTTPStatus 恒有哨兵，
 // 唯独「服务端异常但状态码说谎」的 200+HTML 路径走裸 fmt.Errorf 包装，
 // SDK 用户按文档推荐的 errors.Is(err, ErrInvalidResponse) 判定落空——
 // 同一台服务器 502+HTML 有哨兵而 200+HTML 没有，分类体系在此失效。

@@ -12,7 +12,7 @@ import (
 // 毕业查询在全空响应（code=1 三容器全空）下应归一为 (nil,nil)，
 // 与学期版 QuerySelfEvaluation 的空成功契约对称。
 //
-// 背景（十三域审计 P2-J）：学期版有 isEmptyDecodeFailure(err) → (nil,nil)
+// 背景：学期版有 isEmptyDecodeFailure(err) → (nil,nil)
 // 归一，毕业版原样上抛 ErrAllDecodersFailed。前端语义中「未提交毕业评价」
 // 是正常态而非错误（mainLeft.vue dataMap 为 null 时 isGrad 保持 0、
 // textarea2 保持空串）。姊妹方法行为分叉加剧调用方误读。

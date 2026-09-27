@@ -59,14 +59,14 @@ func (c *Client) ActivateSession(ctx context.Context, token string) (*types.User
 	}
 	// P1-B：学校信息 SSO 回退在 sm.mu 锁外执行（幂等：字段已齐则零开销直通）。
 	//
-	// P0-A7（十六域审计）：info 与 sm.cachedUserInfo 是同一指针（RecordSuccess 原指针入缓存），
+	// 共指针约束：info 与 sm.cachedUserInfo 是同一指针（RecordSuccess 原指针入缓存），
 	// 锁外直接 postProcessSchoolFallback(ctx, info) 会原地改共享缓存指针，与 fast path
 	// 并发读取方形成数据竞争（Go 内存模型下 string 头撕裂风险）。
 	// 修法：浅拷贝出 infoCopy，让 postProcessSchoolFallback 改副本；UpdateCachedUserInfo(infoCopy)
 	// 把缓存指针替换为 infoCopy（不同指针但 token 一致 → 走替换分支）；fast path 命中后
 	// 继续返回 infoCopy（同一指针），保持 DCL 同一缓存指针契约。原 info（步骤 4 网络响应对象）
 	// 不再被并发读到。
-	// P1-B + P0-A7（十六域审计）：学校信息 SSO 回退在 sm.mu 锁外执行。
+	// 锁外回退：学校信息 SSO 回退在 sm.mu 锁外执行，不得把网络往返拼进临界区。
 	//
 	// 修复要点：info 与 sm.cachedUserInfo 是同一指针（RecordSuccess 原指针入缓存），
 	// 锁外直接 postProcessSchoolFallback(ctx, info) 会原地改共享缓存指针，与 fast path

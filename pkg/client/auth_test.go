@@ -1329,7 +1329,7 @@ func TestLogin_UnexpectedStatus_BodyInError(t *testing.T) {
 
 // TestLogin_429_RateLimitedSentinel 验证 Login 收到 429 时返回 ErrRateLimited 哨兵，
 // 而不是笼统的 ErrLoginRejected。
-// 背景（G1）：非 200/302 一律包 ErrLoginRejected，CLI 把限流误报为
+// 背景：非 200/302 一律包 ErrLoginRejected，CLI 把限流误报为
 // 「登录失败」exit 1、不退避；修复后 errors.Is(err, ErrRateLimited) 可精确识别限流。
 func TestLogin_429_RateLimitedSentinel(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

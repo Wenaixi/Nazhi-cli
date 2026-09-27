@@ -15,7 +15,7 @@ import (
 // 服务端虚报 totalNum 且超发首页记录（count/list 短暂不一致的病态响应）时，
 // 翻页合并不得因 make cap < len 而 panic。
 //
-// 背景（十三域审计 P2-K）：多页分支曾以服务端声明的 totalNum 作为 make 容量，
+// 背景：多页分支曾以服务端声明的 totalNum 作为 make 容量，
 // 与第一页实际解码条数独立来源、无钳制；cap < len 直接 runtime panic
 // （makeslice: cap out of range）。钳制后以 max(len(page1), totalNum) 为容量。
 func TestGetSubmittedCircles_TotalNumLessThanFirstPageLen(t *testing.T) {

@@ -225,7 +225,7 @@ func assembleCirclesJSON(raw1 []byte, results []rawResult, totalPage int, partia
 	if totalPage > maxTotalPage {
 		totalPage = maxTotalPage
 	}
-	// CC1 修复：预分配容量钳制到固定上界——len(raw1)×totalPage 可达 40GB，
+	// 预分配容量钳制到固定上界——len(raw1)×totalPage 可达 40GB，
 	// 攻陷服务端可借首页大响应+虚高 totalNum 驱动单请求 OOM。
 	// 改为按已有页实际内容求和精确预分配。
 	// 此前估算 capHint = 页数×首页字节，偏小则触发 bytes.Buffer 倍增扩容的
@@ -651,7 +651,7 @@ func (c *Client) fetchTasksDimensionJSON(ctx context.Context, dim types.Dimensio
 // 但 JSON 透传路径（CLI whoami / GetMyInfoJSON / ActivateSessionJSON 消费）必须剔除，
 // 防止敏感值经 envelope 原样透给脚本消费者与日志。
 //
-// 关键约束（P0-A7 教训）：info 与 sm.cachedUserInfo 共享同一指针，禁止原地置空；
+// 关键约束：info 与 sm.cachedUserInfo 共享同一指针，禁止原地置空；
 // 必须浅拷贝副本后置空。拷贝只涉及 string 字段，成本 O(1) 级。
 func marshalUserInfoJSON(info *types.UserInfo, caller string) (json.RawMessage, error) {
 	if info == nil {

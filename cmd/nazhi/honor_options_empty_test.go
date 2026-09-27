@@ -14,7 +14,7 @@ import (
 // 服务端 dataList 为 null 时，honor type-options / level-options / levels
 // 的 envelope.data 应为 [] 而非 null。
 //
-// 背景（十三域审计 P2-M）：同仓五个 circle 元数据命令均有 nil→[] 归一，
+// 背景：同仓五个 circle 元数据命令均有 nil→[] 归一，
 // 荣誉三个下拉命令把 Go nil slice 直塞 Success 信封输出 "data":null——
 // jq '.data[]' 对 null 报错退出，同类命令却可正常管道消费，脚本作者无从预期。
 func TestHonorDropdownCommandsEmptyDataOutputsEmptyArray(t *testing.T) {

@@ -20,9 +20,12 @@ import (
 //   - defer closeAllClients() 仍能跑（os.Exit 只在 main 最后调一次）
 var pendingExitCode atomic.Int32
 
-// maxCLILimit 是四任务命令 --limit 参数的上界。对齐 SDK maxSubmittedRecords
-// （pkg/client 的 maxSubmittedRecords，10 万条单次任务合理上限）：offset+limit 派生
-// endPage 不超过服务端 maxTotalPage，避免 SDK 静默返回首页快照。
+// maxCLILimit 是四任务命令 --limit 参数的上界，取「单次任务合理上限」量级
+// （10 万条）。它不是某道闸的镜像：--limit 走透传路径，那条路径按原始字节
+// 预算（maxAssembleBuffer）而非条数设闸，SDK 侧的 maxSubmittedRecords 是结构化
+// 路径的 make 容量闸、透传路径从不读它。真正的硬上界在 SDK 侧由 limitEndPage
+// 钳到 maxTotalPage，分配始终有界；此处设限是为了让超限在 CLI 侧即以参数错误
+// 拒绝，而不是静默返回被服务端截断的结果。
 const maxCLILimit = 100_000
 
 // printErrorDepth 防止递归兜底路径无限递归。
@@ -43,7 +46,7 @@ func printEnvelope(e *envelope.Envelope) {
 	if e == nil {
 		return
 	}
-	// 统一脱敏（C2）：Message 可能直拼底层错误链（login.go 等的 err.Error() 包含
+	// 统一脱敏：Message 可能直拼底层错误链（login.go 等的 err.Error() 包含
 	// SDK 已部分脱敏文本；若未来新增未脱敏错误片段，stdout 通道不得静默泄露）。
 	// RedactBody 幂等（已有值再脱敏不影响），保持与 printError 的 stderr 通道同口径。
 	if e.Message != "" {

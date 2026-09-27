@@ -32,8 +32,9 @@ import "math"
 //   - maxFetchTasksDims（维度闸）：任务维度数上界，恶意值驱动全维度并发
 //     拉取 × 单页 4MB 累积无预算；128 维远超任何真实学校维度集。
 //
-// 钳制/预算纯函数（derivePageBounds / estimatePagesBudgeted 等）同文件承载，
-// 各调用点只消费统一入口。
+// 页数推导与钳制纯函数（derivePageBounds / clampPage / limitEndPage）同文件承载；
+// 字节闸的配套纯函数（estimatePagesBudgeted / capAssembledSlice /
+// cumulativeSliceBytes / budgetTruncatePage）只被透传路径消费，见 raw_json.go。
 const (
 	maxTotalPage        = 10000
 	maxAssembleBuffer   = 64 << 20

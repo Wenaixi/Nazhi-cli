@@ -20,10 +20,13 @@ var taskInputNumericStringFields = [...]string{
 	"playRole",
 }
 
-// taskInputDeprecatedFields 是 TaskSubmitInput/TaskEditInput 中前端表单有键但
-// 无 v-model（用户从不手填）的历史兼容字段。CLI 允许传入但 SDK 不消费——
-// 与 user update 的 nationalStudentNumber 同理：避免把"旧调用方还在传"误判
-// 为"未知键"，否则会误伤历史 payload。
+// taskInputDeprecatedFields 是前端表单有键但用户从不手填的历史兼容字段。
+// 放行它们是为了不把「旧调用方还在传」误判为「未知键」，否则会误伤历史
+// payload——这一点与字段是否被提交链路读取无关。
+//
+// 注意：这七个键并非「SDK 不消费」。buildTaskPayload 会读取其中六个并
+// 原样带上 Name/HostName/CircleDate/Rank/Level/TermName 出站（空值不覆盖、
+// 不发明默认值）；只有 id 由编辑路径单独处理，不经 ActivityFields。
 // 前端 form 对照实证：practice 表单 JSON.stringify 恒含 id/""、name/""、hostName/""、
 // circleDate/""、rank/""、level/""、termName/""；art 表单含 name；edit 恒注入 id。
 var taskInputDeprecatedKeys = newPayloadKeySet(
