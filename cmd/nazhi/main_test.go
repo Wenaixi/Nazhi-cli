@@ -2,92 +2,67 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"io"
 	"os"
 	"strings"
 	"testing"
 
-	"github.com/Wenaixi/nazhi-cli/pkg/envelope"
 	"github.com/spf13/cobra"
 )
 
-// TestMain_NoDoubleErrorOutput 回归测试：main.go 收到 cobra 参数解析错误时，
-// 用 printEnvelope(envelope.Error(400, msg)) 输出到 stdout（JSON envelope），
-// 而不是 printError(execErr) 输出到 stderr。
-// 验证：
-//   - stdout 输出 JSON envelope（含 status=error, code=400）
-//   - stderr 无 cobra 默认的 "Error: unknown flag" 前缀（SilenceErrors 生效）
-//   - 退出码通过 pendingExitCode 标记为 3（参数错误）
-func TestMain_NoDoubleErrorOutput(t *testing.T) {
-	// 暂存全局状态以恢复
-	origStdout := os.Stdout
-	origStderr := os.Stderr
-	rootCmd.SetArgs([]string{"login", "--badflag"})
-	defer func() {
-		os.Stdout = origStdout
-		os.Stderr = origStderr
-		rootCmd.SetArgs(nil)
-	}()
+// TestMain_ParamErrorExitsThree 锁定参数错误的真实生产出口：写 stderr、退出码 3。
+//
+// 此前此处有个 TestMain_NoDoubleErrorOutput，它自己复制了生产那一行
+// printEnvelope(envelope.Error(400, ...)) 并断言 stdout 含 error、stderr 为空。
+// 生产早已改走 printParamError（写 stderr），而该测试仍断言旧世界——它测的是
+// 自己复制的那一行，生产改了它不会红。变异验证可复现：把那行换成生产的
+// printParamError，测试立即报「stderr 应为空，实际含 error 信封」。两条相反契约
+// 并存（param_error_channel_test.go 断言 stdout 必须为空），属恒绿且失实的测试，
+// 已删除。
+//
+// 本用例直接验证 printParamError 本身——main.go 收到 cobra 参数解析错误后调它，
+// 退出码由它设置。不复制 main.go 的控制流：复制生产逻辑正是原测试恒绿的根因。
+// 通道归属另有 param_error_channel_test.go 与 TestNoDirectStdoutWritesInCmd 守卫。
+func TestMain_ParamErrorExitsThree(t *testing.T) {
+	// pendingExitCode 是进程级状态，用例结束后复位以免污染其它用例。
+	defer pendingExitCode.Store(0)
 
-	// 捕获 stdout（printEnvelope 写到此处）
+	origStdout, origStderr := os.Stdout, os.Stderr
+	defer func() { os.Stdout, os.Stderr = origStdout, origStderr }()
+
 	stdoutR, stdoutW, err := os.Pipe()
 	if err != nil {
 		t.Fatalf("os.Pipe 失败: %v", err)
 	}
-	os.Stdout = stdoutW
-
-	// 捕获 stderr（验证 cobra 无输出）
 	stderrR, stderrW, err := os.Pipe()
 	if err != nil {
 		t.Fatalf("os.Pipe stderr 失败: %v", err)
 	}
-	os.Stderr = stderrW
+	os.Stdout, os.Stderr = stdoutW, stderrW
 
-	// 模拟 main.go：Execute → 若 execErr != nil 则 printEnvelope(code=400)
-	execErr := rootCmd.Execute()
-	if execErr == nil {
-		t.Fatal("Execute 应返回错误（传入了未知 flag --badflag）")
-	}
-	printEnvelope(envelope.Error(400, execErr.Error()))
+	printParamError(errors.New("unknown flag: --badflag"))
 
 	// 关 writer 让 reader 能读到 EOF
 	_ = stdoutW.Close()
 	_ = stderrW.Close()
 
-	var stdoutBuf bytes.Buffer
+	var stdoutBuf, stderrBuf bytes.Buffer
 	if _, err := io.Copy(&stdoutBuf, stdoutR); err != nil {
 		t.Fatalf("读取 stdout 失败: %v", err)
 	}
-	var stderrBuf bytes.Buffer
 	if _, err := io.Copy(&stderrBuf, stderrR); err != nil {
 		t.Fatalf("读取 stderr 失败: %v", err)
 	}
-	stdoutOutput := stdoutBuf.String()
-	stderrOutput := stderrBuf.String()
 
-	// 关键断言 1："unknown flag" 字样出现在 stdout（printEnvelope JSON 中），
-	// stderr 应该没有 cobra 默认的 "Error: unknown flag" 前缀
-	if strings.Contains(stderrOutput, "Error: unknown flag") {
-		t.Errorf("stderr 出现 cobra 默认 'Error: unknown flag' 前缀 → SilenceErrors 未生效，stderr: %q", stderrOutput)
-	}
-	// stderr 应为空（SilenceErrors + SilenceUsage）
-	if len(stderrOutput) > 0 {
-		t.Errorf("stderr 应为空，实际: %q", stderrOutput)
-	}
-
-	// 关键断言 2：stdout 必须包含 JSON envelope 的 error 字段
-	if !strings.Contains(stdoutOutput, `"status": "error"`) {
-		t.Errorf("stdout 应包含 JSON envelope status=error，实际: %q", stdoutOutput)
-	}
-
-	// 关键断言 3：code 应为 400（参数错误 → exit code 3）
-	if !strings.Contains(stdoutOutput, `"code": 400`) {
-		t.Errorf("stdout 应包含 code=400，实际: %q", stdoutOutput)
-	}
-
-	// 关键断言 4：pendingExitCode 被标记为 3
 	if code := pendingExitCode.Load(); code != 3 {
-		t.Errorf("pendingExitCode 应为 3，实际 %d", code)
+		t.Errorf("参数错误应标记退出码 3，实际 %d", code)
+	}
+	if got := stdoutBuf.String(); got != "" {
+		t.Errorf("stdout 应为空（错误一律写 stderr），实际: %q", got)
+	}
+	if got := stderrBuf.String(); !strings.Contains(got, `"code": 400`) {
+		t.Errorf("stderr 应含 400 参数错误信封，实际: %q", got)
 	}
 }
 

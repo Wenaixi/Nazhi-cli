@@ -96,6 +96,10 @@ func (c *Client) QuerySelfEvaluation(ctx context.Context, token string) (*types.
 			if resp.DataList == nil {
 				return nil, nil
 			}
+			// 此处严格解码（types.SelfEvalStatus.UnmarshalJSON）的错误被有意
+			// 吞掉：条件不满足即落入下方 []map[string]any 的宽松路径。因此
+			// UnmarshalJSON 对非法 id 报错的严格性不构成对外契约——同一份
+			// 响应经另外两个容器（returnData / dataMap）本就得到「成功但 ID=0」。
 			statuses, err := types.DecodeDataList[types.SelfEvalStatus](resp)
 			if err == nil && len(statuses) > 0 {
 				if normalized := normalizeSelfEvalStatus(map[string]any{

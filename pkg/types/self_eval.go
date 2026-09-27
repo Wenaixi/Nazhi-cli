@@ -36,7 +36,17 @@ func (s *SelfEvalStatus) UnmarshalJSON(data []byte) error {
 			return fmt.Errorf("SelfEvalStatus.id: %w", err)
 		}
 	}
-	// snake 主读（平台 dataMap 真实形态），camel 兼容——与 client.normalizeSelfEvalStatus 口径一致
+	// snake 主读（平台 dataMap 真实形态），camel 兼容。
+	//
+	// 注意：本方法与 client.normalizeSelfEvalStatus 是两套独立实现，判据
+	// 并不一致——id 在此直接 Unmarshal 到 int64（非法值报错误、中断整条解码），
+	// 在 map 路径则经 NormalizeIntegerValue 归零后继续解析评语；空白串在此
+	// 原样保留，在 map 路径被 TrimSpace 后视为空。二者曾互相声明「口径一致」，
+	// 该断言不成立，已删除。
+	//
+	// 当前不构成用户可见差异：本方法在产品代码中唯一挂载点是 dataList 容器的
+	// DecodeDataList，而该处的解码错误被 client/self_eval.go 的条件吞掉、降级
+	// 到 map 宽松路径。returnData 与 dataMap 容器不走本方法。
 	studentComment, present, err := firstJSONString(raw, "student_comment", "studentComment")
 	if err != nil {
 		return fmt.Errorf("SelfEvalStatus.studentComment: %w", err)

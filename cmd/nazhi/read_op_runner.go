@@ -89,31 +89,52 @@ func runReadOp(cmd *cobra.Command, mode readOpMode) {
 	printEnvelope(mode.success(result))
 }
 
-// normalizeEmptyList 把取数结果中的 nil 切片归一为空数组。
+// normalizeEmptyList 把取数结果中的 nil 记录列表归一为空数组。
 //
 // 平台在无数据时可能返回 null 或空数组，Go 侧都解成 nil 切片；直接封进
 // Success 信封会输出 "data":null，下游 jq '.data[]' 对 null 报错退出。
 // 本函数是这条契约的唯一实现处。
 //
-// 判据是「识别 nil 切片」而非「枚举已知切片类型」。枚举写法只覆盖
-// []map[string]any 与 []any，而本仓读命令的返回值绝大多数是具名切片类型
-// （[]types.HonorSelectOption、[]types.Dimension、[]types.HonorType 等），
-// 一个都不命中——守卫收编了用不上的类型，漏掉了真正需要它的类型，导致调用点
-// 各自手抄一份归一。反射判据让新增返回类型自动受保护，调用点也无法漏写。
+// 判据是「是不是记录列表」，不是「是不是 nil 切片」。仅按 Kind==Slice
+// 判断会把不透传的 json.RawMessage（底层同为 []byte）误当记录列表：nil
+// RawMessage 会被换成非 nil 的零长 RawMessage，既让调用点的 == nil 判据
+// 失效，又不是合法 JSON（MarshalJSON 返回空字节，编码器报 unexpected end
+// of JSON input），信封序列化失败后 stdout 空白且退出码 1——比 data:null
+// 更难排查。记录列表的元素是结构化对象，RawMessage 承载的是已序列化的
+// 原始 JSON，两者据此分开。
 //
-// 非 nil 的空切片原样返回：它本就序列化为 []，构造一个同类型新切片没有收益。
+// 早期版本用「枚举已知切片类型」实现，只覆盖 []map[string]any 与 []any，
+// 而本仓读命令的返回值绝大多数是具名切片类型（[]types.HonorSelectOption、
+// []types.Dimension、[]types.HonorType 等），一个都不命中——守卫收编了
+// 用不上的类型，漏掉了真正需要它的类型，导致调用点各自手抄一份归一。
+// 现按元素类型判定，新增返回类型自动受保护。
+//
+// 非 nil 的空列表原样返回：它本就序列化为 []，构造一个同类型新切片没有收益。
+// 非列表载荷（含 nil RawMessage）原样返回，由调用方的 success 闭包按各自
+// 载荷语义决定空形态——它们的口径互不相同，无全局规则可套。
 func normalizeEmptyList(result any) any {
 	if result == nil {
 		return []map[string]any{}
 	}
 	rv := reflect.ValueOf(result)
-	if rv.Kind() != reflect.Slice || !rv.IsNil() {
+	if !isRecordList(rv) || !rv.IsNil() {
 		return result
 	}
 	// 保留原类型，只把 nil 换成同长度的空切片，
 	// 这样调用方与断言看到的仍是它传进来的那个具名类型。
 	empty := reflect.MakeSlice(rv.Type(), 0, 0)
 	return empty.Interface()
+}
+
+// isRecordList 判断值是否为「记录列表」——元素是结构化对象的切片。
+// 判据是元素类型而非容器类型：json.RawMessage 的容器是 []byte，但元素是
+// 已序列化的原始 JSON，不属于记录列表。
+func isRecordList(rv reflect.Value) bool {
+	if rv.Kind() != reflect.Slice {
+		return false
+	}
+	// 元素为字节的切片是「一串字节」而非「一串记录」，不适用空数组归一。
+	return rv.Type().Elem().Kind() != reflect.Uint8
 }
 
 // validatePaginationFlags 校验分页参数合法性，是分页纪律的单一实现处。

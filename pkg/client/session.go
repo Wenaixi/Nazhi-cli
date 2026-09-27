@@ -80,15 +80,18 @@ func (c *Client) ActivateSession(ctx context.Context, token string) (*types.User
 	if !c.sm.fallbackDone.Load() {
 		infoCopy := *info
 		c.postProcessSchoolFallback(ctx, &infoCopy)
-		// 出口门控 CAS 独占声明：UpdateCachedUserInfo 已按 token 匹配决定
-		// 是否替换缓存（跨 token 迟到写入被忽略）。Store(true) 只在
-		// 缓存实际被本 token 补全后执行——否则 A 的 fallback 被 B 的
-		// RecordSuccess 重置标志后，A 的无条件 Store(true) 会让 B 跳过
-		// 学校回退（缓存中 B 的 SchoolID/SchoolName 静默为空），。
+		// 置位 fallbackDone：本出口返回前缓存指针已由 UpdateCachedUserInfo
+		// 按 token 匹配写入，跨 token 的迟到写入会被忽略——那种情况下标志
+		// 仍被置位，但缓存属于另一个 token，它自身的激活会重新走一遍回退。
+		// 故标志的语义是「本进程已做过一次学校信息回退」，不是「当前缓存
+		// 一定已补全」。
+		//
+		// 跨 token 交错的精确保障在锁内：RecordSuccess / RecordFailure 只在
+		// 持 sm.mu 的激活路径内被调用，而本段全程在锁外，两者互斥不重叠。
+		// 此前注释描述的「A 的回退被 B 的 RecordSuccess 重置标志后让 B 跳过
+		// 回退」场景在当前锁结构下不可达，属虚构，已删除。
 		c.sm.UpdateCachedUserInfo(&infoCopy, token)
-		if c.sm.fallbackDone.CompareAndSwap(false, true) {
-			return &infoCopy, nil
-		}
+		c.sm.fallbackDone.Store(true)
 		return &infoCopy, nil
 	}
 	return info, nil

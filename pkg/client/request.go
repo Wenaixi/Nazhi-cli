@@ -234,27 +234,46 @@ func (c *Client) doBizAndDecode(ctx context.Context, token, opName, path, method
 		return nil, fmt.Errorf("%s 响应解析失败: %w: %w", opName, ErrInvalidResponse, err)
 	}
 
-	if err := types.CheckCode(resp); err != nil {
-		return nil, errors.Join(ErrBusinessRejected, fmt.Errorf("%s失败: %w", opName, err))
+	if err := checkBizCode(opName, resp); err != nil {
+		return nil, err
 	}
 	return &resp, nil
 }
 
-// decodeOrInvalidResponse 是业务层五处 DecodeResponse 调用的统一哨兵包装 helper。
-// 主管线 doBizAndDecode (request.go:230-235) 已用双 %w 包装 ErrInvalidResponse；
-// 业务层 GetSchoolID / GetMyInfo / fetchTasksDimensionJSON /
-// fetchTasksForDimension(getCircleStatistics) 自行调 types.DecodeResponse 后裸 fmt.Errorf，
-// 让 errors.Is(err, ErrInvalidResponse) 在服务端 200+HTML（WAF/维护页）场景下落空，
-// CLI 漏斗走 default 500/exit2。
+// decodeOrInvalidResponse 包装 types.DecodeResponse 并附 ErrInvalidResponse 哨兵。
 //
-// 此 helper 把主管线哨兵口径拉到业务层全部调用方，保证 errors.Is 判定全覆盖。新增
-// types.DecodeResponse 裸调用前先考虑接入本 helper，勿再扩大裸调用面。
+// 背景：裸 fmt.Errorf 会让 errors.Is(err, ErrInvalidResponse) 在服务端
+// 200+HTML（WAF/维护页）场景下落空，CLI 漏斗走 default 500/exit2。附哨兵后
+// 该场景归 502/exit2。
+//
+// 当前调用点两处：GetSchoolID 与 doBizGetRaw。getMyInfoRaw 与两条任务维度
+// 管线已改走 doBizGetRaw，不再直调本 helper。主管线 doBizAndDecode 自行内联
+// 同口径的包装，未接入本 helper——两处文案与哨兵相同，但分属不同调用路径
+// （一条带预热、一条不带），保持各自内联以便日志上下文就地可读。
+//
+// 新增 types.DecodeResponse 裸调用前先考虑接入本 helper，勿再扩大裸调用面。
 func decodeOrInvalidResponse(opName string, bodyBytes []byte) (types.UnifiedResponse, error) {
 	resp, err := types.DecodeResponse(bodyBytes)
 	if err != nil {
 		return resp, fmt.Errorf("%s 响应解析失败: %w: %w", opName, ErrInvalidResponse, err)
 	}
 	return resp, nil
+}
+
+// checkBizCode 判定业务码，业务域成功时返回 nil，否则返回带操作名前缀的
+// ErrBusinessRejected 包装。它是业务码检查的单一实现处。
+//
+// 此前 doBizAndDecode 与 doBizGetRaw 各自内联同一段（逐字符相同），改哨兵包装
+// 要同步两处；而 doBizGetRaw 的 godoc 自称把「请求 → 解析 → 业务码」收为单点，
+// 漏的恰是这一段。收进本函数后，新增业务 GET 管线不会漏掉业务码判定。
+//
+// 上传域不走本函数：file.go 刻意以 ErrUploadRejected 表达上传被拒，两者语义
+// 不同，不合并。
+func checkBizCode(opName string, resp types.UnifiedResponse) error {
+	if err := types.CheckCode(resp); err != nil {
+		return errors.Join(ErrBusinessRejected, fmt.Errorf("%s失败: %w", opName, err))
+	}
+	return nil
 }
 
 // doBizGetDecode 封装 GET 请求的"预热 session → httpDo → DecodeResponse → CheckCode → 类型安全解码"管线。
@@ -310,10 +329,14 @@ func doBizGetDecode[T any](c *Client, ctx context.Context, token, opName, path s
 // 主管线 doBizAndDecode 内联了「预热 → httpDo → DecodeResponse → CheckCode」，
 // 而 getMyInfoRaw（激活链步骤 4，锁内不能预热）与两条任务维度管线
 // （fetchTasksForDimension / fetchTasksDimensionJSON）此前各自手写同一段，
-// 每次改 CheckCode 哨兵包装或日志行为要同步 3-4 个文件。本函数把这段收为
-// 单点：不预热（调用方承诺已完成激活，锁内路径避免重入死锁）、不解码
-// （解码器链与空语义是调用点知识，见 doBizGetDecode 的 decoders 参数）。
-// （ErrInvalidResponse / ErrBusinessRejected）。
+// 每次改哨兵包装或日志行为要同步 3-4 个文件。本函数把这段收为单点：
+// 不预热（调用方承诺已完成激活，锁内路径避免重入死锁）、不解码（解码器链与
+// 空语义是调用点知识，见 doBizGetDecode 的 decoders 参数）。
+//
+// 哨兵口径：解析失败归 ErrInvalidResponse（经 decodeOrInvalidResponse），
+// 业务码非成功归 ErrBusinessRejected（经 checkBizCode）。业务码检查此前在
+// 本函数与 doBizAndDecode 各内联一份逐字符相同的代码，已收敛到 checkBizCode。
+//
 // token 不单独传参：业务请求头（含 X-Auth-Token）由调用方经 headers 提供，
 // 本函数不预热 session，也不自行组装业务头。
 func (c *Client) doBizGetRaw(ctx context.Context, opName, path string, headers map[string]string) (*types.UnifiedResponse, error) {
@@ -325,8 +348,8 @@ func (c *Client) doBizGetRaw(ctx context.Context, opName, path string, headers m
 	if err != nil {
 		return nil, err
 	}
-	if err := types.CheckCode(resp); err != nil {
-		return nil, errors.Join(ErrBusinessRejected, fmt.Errorf("%s失败: %w", opName, err))
+	if err := checkBizCode(opName, resp); err != nil {
+		return nil, err
 	}
 	return &resp, nil
 }

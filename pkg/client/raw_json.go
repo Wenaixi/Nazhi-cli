@@ -206,6 +206,18 @@ type rawResult struct {
 // raw1 是第一页原始 JSON，results 是按页号索引的后续页数据。
 // 成功路径返回完整 JSON 数组，失败路径通过 trimArrayToCurrent 截断为已有部分。
 //
+// 调用方不变式：len(results) 必须大于 totalPage，即 results 长度与页号上界
+// 同步。二者的分配都在 getCirclesJSON 内（make(len=declaredPages+1) 与
+// budgetTruncatePage 回退后的页号），本函数按该约定直接索引 results[pn]。
+//
+// 为什么不加边界防护：cumulativeSliceBytes 与 assembleCirclesLimitJSON 写的是
+// `pn < len(results)`，形态确与此处不同，但那两处是被当预算扫描器使用的全函数
+// （测试刻意传越界页号验证其不 panic），本处是断言式访问。服务端的攻击面只有
+// totalNum / totalPage 的上界，已被 derivePageBounds 与本函数的 maxTotalPage
+// 钳制双重夹住；收缩方向服务端无法驱动，budgetTruncatePage 的回退只会让页号
+// 变小。为不可达的越界加静默截断，会把「页号越界」从显式契约变成隐式容忍。
+// 新增合并点时必须同样保证 results 长度与页号上界同步。
+//
 // 用 first 标志控制逗号，避免 page1 为空数组时产生 leading comma 非法 JSON（[,{...}]）。
 // 对齐 assembleCirclesLimitJSON 的拼接策略。
 func assembleCirclesJSON(raw1 []byte, results []rawResult, totalPage int, partialErr error) (json.RawMessage, error) {
