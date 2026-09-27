@@ -38,6 +38,10 @@
 - **`pkg/client/auth_login_drain_test.go`**（新增守卫）：`TestLogin_ValidateOversizedBody_ClosesWithoutDraining` 用一个「限读上限 + 持续推送」的服务端，断言 Login 超限后**服务端写入量不超过阈值**。**既有 `TestLogin_ValidateOversizedBody_Rejects` 只断言返回 `ErrLoginRejected`，而无论是否 Close 都得到同一错误——该断言对「是否无上限续读」完全无区分力**，属恒真。
   - **变异验证异常强烈**：移除修复后该测试不是变红，而是**直接 300 秒超时**——客户端无上限 drain、服务端持续写入，两者僵持至超时。这精确复现了实测的 264MB 续读现象。恢复修复后 **0.03 秒通过**。
 
+
+- **`pkg/client/comment_ref_guard_test.go`**（新增守卫）：扫描仓库根 `pkg` / `cmd` / `internal` 的全部注释行，禁止 `file.go:NNN` 形式的行号引用越过目标文件实际行数（豁免 `internal/version/version.go`——版本演进注释按设计记录历史行号）。背景是本轮审计发现 20 处行号引用中已有 1 处越界、多数漂移；行号随任何编辑漂移，符号名由编译器保证。已修两处实证：`request.go` 引用 `auth.go:353`（该文件仅 313 行），且该注释声称 `doBizGet` 有「三处调用点」而 `grep` 证实只有一处；`cmd/nazhi/output.go` 两处引用 `submitted.go:138` 而真实位置是 153 行。
+  - **该守卫首版是恒绿的，靠变异验证才发现**：`filepath.Walk` 以 root 自身的 basename 作为首次回调的 `info.Name()`，传相对路径 `../..` 时该 name 就是 `..`，被「跳过以点开头的隐藏目录」判据 `SkipDir`——整个 walk 尚未展开就被跳过。注入 `auth.go:9999` 到 `cmd/nazhi/output.go` 后测试仍绿，说明扫的是空集。修法是先用 `filepath.Abs` 解析绝对路径再 walk（`mustAbs` 辅助函数），修后注入即变红并精确报出该行。**教训已记入 CLAUDE.md：靠目录遍历的守卫若自身没有正向的「确实扫到了东西」断言，可能整条空转。**
+
 ### 门禁
 
 - 修掉一处**预先存在**的 lint 阻塞（`pkg/client/typical_case_status_test.go:39` 注释缺 `//` 后空格，gocritic `commentFormatting`）。经 `git stash` 回到基线复跑确认该问题**早于本轮存在**，非本轮引入。

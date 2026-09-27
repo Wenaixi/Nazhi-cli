@@ -21,7 +21,7 @@ import (
 var pendingExitCode atomic.Int32
 
 // maxCLILimit 是四任务命令 --limit 参数的上界。对齐 SDK maxSubmittedRecords
-// （pkg/client/submitted.go:138，10 万条单次任务合理上限）：offset+limit 派生
+// （pkg/client 的 maxSubmittedRecords，10 万条单次任务合理上限）：offset+limit 派生
 // endPage 不超过服务端 maxTotalPage，避免 SDK 静默返回首页快照。
 const maxCLILimit = 100_000
 
@@ -169,7 +169,7 @@ func rejectLoneOffset(cmd *cobra.Command) bool {
 	if limit > maxCLILimit {
 		// limit 超上界 → SDK endPage 超 maxTotalPage 静默只翻首页，
 		// 脚本拿截断数据不自知。参数错误拒绝（对齐 400/exit3 半套纪律：≤0 已拒、
-		// 超上界同族拒绝）。上界与 SDK maxSubmittedRecords 对齐（submitted.go:138，
+		// 超上界同族拒绝）。上界与 SDK maxSubmittedRecords 对齐（pkg/client 的
 		// 10 万条单次任务合理上限，offset+limit 分页不会触发首页截断）。
 		printParamError(fmt.Errorf("--limit 不能超过 %d（避免分页派生 endPage 触发服务端首页截断）", maxCLILimit))
 		return true

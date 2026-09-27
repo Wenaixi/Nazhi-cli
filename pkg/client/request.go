@@ -482,8 +482,7 @@ func (c *Client) doBizGet(ctx context.Context, url string, headers map[string]st
 	// doBizGet 读响应体同样封顶
 	// maxResponseBodySize（当前 4MB，2026-08-27 事故后放宽）——与 httpDo 同构，
 	// 防异常/被劫持服务端塞超大 body 造成内存放大。
-	// doBizGet 是激活步骤1（持 sm.mu 锁）/ InitSession 三处共用 helper，
-	// 一处修复同时治愈三处无上限读体（session.go:108 / auth.go:27 / auth.go:353）。
+	// doBizGet 当前只有一个调用点：激活链步骤1（持 sm.mu 锁，session.go）。
 	// 超限分支直 Close 放弃 keep-alive（与 httpDo 同纪律，不再经 defer
 	// drainAndClose 无上限续读剩余 body）。
 	bodyBytes, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBodySize+1))
