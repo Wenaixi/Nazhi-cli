@@ -36,21 +36,14 @@ func (p *PlayRoleCode) UnmarshalJSON(data []byte) error {
 		*p = PlayRoleCode(strings.TrimSpace(s))
 		return nil
 	}
-	// number（含科学计数极少见；用 float64 再 FormatInt 会丢大整数，角色码仅 1–3）
-	var n json.Number
-	if err := json.Unmarshal(data, &n); err != nil {
+	// number（含科学计数极少见）：判定口径委派 NormalizeInteger——
+	// 整值判定、int64 范围拒绝与数字串去空格由归一模块单点持有，
+	// 与 FlexInt 同族，不再在本类型手写第二份 number→int 判定。
+	v, err := NormalizeInteger(data)
+	if err != nil {
 		return fmt.Errorf("PlayRoleCode: 期望 string 或 number，得到 %s: %w", string(data), err)
 	}
-	// 优先整型字面量
-	if i, err := n.Int64(); err == nil {
-		*p = PlayRoleCode(strconv.FormatInt(i, 10))
-		return nil
-	}
-	f, err := n.Float64()
-	if err != nil {
-		return fmt.Errorf("PlayRoleCode: 无法解析 number %q: %w", n.String(), err)
-	}
-	*p = PlayRoleCode(strconv.FormatInt(int64(f), 10))
+	*p = PlayRoleCode(strconv.FormatInt(v, 10))
 	return nil
 }
 
@@ -91,11 +84,13 @@ func (l *IntList) UnmarshalJSON(data []byte) error {
 		if s == "" {
 			continue
 		}
-		n, err := strconv.Atoi(s)
+		// 判定口径委派 NormalizeIntegerText：整值判定与数字串去空格
+		// 由归一模块单点持有，与 FlexInt/PlayRoleCode 同族。
+		n, err := NormalizeIntegerText(s)
 		if err != nil {
 			return fmt.Errorf("IntList: 元素 %q 不是整数: %w", s, err)
 		}
-		out = append(out, n)
+		out = append(out, int(n))
 	}
 	*l = IntList(out)
 	return nil
@@ -199,9 +194,9 @@ func (f *FlexInt) UnmarshalJSON(data []byte) error {
 	if f == nil {
 		return fmt.Errorf("FlexInt: UnmarshalJSON on nil pointer")
 	}
-	v, err := NormalizeInteger(data)
+	v, err := NormalizeIntegerField(data, "FlexInt")
 	if err != nil {
-		return fmt.Errorf("FlexInt: %w", err)
+		return err
 	}
 	*f = FlexInt(v)
 	return nil

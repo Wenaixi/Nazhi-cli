@@ -86,8 +86,30 @@ func Empty(msg string) *Envelope {
 }
 
 // Partial 构造部分成功 envelope。
+//
+// Deprecated: 语义不明确（code 由调用方任意传）。列表部分页失败请用
+// PartialData（code 恒 207）；session 冷却请用 Pulse（code 恒 429）。
+// 保留仅为兼容旧调用方。
 func Partial(code int, msg string, data any) *Envelope {
 	return &Envelope{Status: StatusPartial, Code: code, Message: msg, Data: data}
+}
+
+// PartialData 构造「列表部分页失败」envelope（HTTP 207）。
+//
+// 部分完成在 CLI 只有一种业务形态：列表/任务取数时已拿到部分数据但后续
+// 页失败。code 恒 207 由模块单点持有，调用方不再手抄字面量；
+// ExitCode 对 StatusPartial 恒返回 1。
+func PartialData(msg string, data any) *Envelope {
+	return &Envelope{Status: StatusPartial, Code: 207, Message: msg, Data: data}
+}
+
+// Pulse 构造「会话冷却」envelope（HTTP 429）。
+//
+// 与列表部分失败语义不同：session 激活被 backoff 抑制不是「部分完成」，
+// 而是「有状态但暂不可用」。单独构造器让两种语义不再共用外观相同的
+// Partial 调用；ExitCode 仍为 1（StatusPartial 恒 1）。
+func Pulse(msg string) *Envelope {
+	return &Envelope{Status: StatusPartial, Code: 429, Message: msg, Data: nil}
 }
 
 // Error 构造错误 envelope。

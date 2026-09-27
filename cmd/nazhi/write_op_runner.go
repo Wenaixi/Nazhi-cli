@@ -80,6 +80,18 @@ func applyAddressLevelFlags(cmd *cobra.Command, apply func(address, level string
 	apply(address, level)
 }
 
+// taskApplyAddressLevelFlags 是 applyAddressLevelFlags 的 task 输入泛型包装：
+// 类型断言 + 非空判定 + 赋值 Address/Level 一次收口。task 写操作族四个分支
+// （submit/edit/previewSubmit/previewEdit）此前的 applyFlags 闭包逐字重复，
+// 只差具体类型（TaskSubmitInput / TaskEditInput），经本函数收敛为一行委托。
+//
+// 约束经 SetAddressLevel 接口方法访问字段（Go 泛型 union 无法直接读字段），
+// 该方法由两个输入类型提供（见 pkg/types/task.go）。
+func taskApplyAddressLevelFlags[T interface{ SetAddressLevel(address, level string) }](cmd *cobra.Command, decoded any) {
+	input := decoded.(T)
+	applyAddressLevelFlags(cmd, input.SetAddressLevel)
+}
+
 // attachAllowedKeysHelp 把命令的 payload 允许键清单写进 Long 帮助文本。
 //
 // 必须在命令构造期（init 或 var 初始化）调用，而不是在 Run 里：cobra 只在
@@ -195,15 +207,7 @@ var taskSubmitWriteOp = writeOpMode{
 		return &input, nil
 	},
 	applyFlags: func(cmd *cobra.Command, decoded any) {
-		input := decoded.(*types.TaskSubmitInput)
-		applyAddressLevelFlags(cmd, func(address, level string) {
-			if address != "" {
-				input.Address = address
-			}
-			if level != "" {
-				input.Level = level
-			}
-		})
+		taskApplyAddressLevelFlags[*types.TaskSubmitInput](cmd, decoded)
 	},
 	call: func(ctx context.Context, c *client.Client, token string, decoded any) (any, error) {
 		return c.SubmitTask(ctx, token, *decoded.(*types.TaskSubmitInput))
@@ -225,15 +229,7 @@ var taskEditWriteOp = writeOpMode{
 		return &input, nil
 	},
 	applyFlags: func(cmd *cobra.Command, decoded any) {
-		input := decoded.(*types.TaskEditInput)
-		applyAddressLevelFlags(cmd, func(address, level string) {
-			if address != "" {
-				input.Address = address
-			}
-			if level != "" {
-				input.Level = level
-			}
-		})
+		taskApplyAddressLevelFlags[*types.TaskEditInput](cmd, decoded)
 	},
 	call: func(ctx context.Context, c *client.Client, token string, decoded any) (any, error) {
 		return c.EditCircle(ctx, token, *decoded.(*types.TaskEditInput))
@@ -267,15 +263,7 @@ var taskPreviewSubmitWriteOp = writeOpMode{
 		return &input, nil
 	},
 	applyFlags: func(cmd *cobra.Command, decoded any) {
-		input := decoded.(*types.TaskSubmitInput)
-		applyAddressLevelFlags(cmd, func(address, level string) {
-			if address != "" {
-				input.Address = address
-			}
-			if level != "" {
-				input.Level = level
-			}
-		})
+		taskApplyAddressLevelFlags[*types.TaskSubmitInput](cmd, decoded)
 	},
 	call: func(ctx context.Context, c *client.Client, token string, decoded any) (any, error) {
 		return c.PreviewSubmitPayload(ctx, token, *decoded.(*types.TaskSubmitInput))
@@ -297,15 +285,7 @@ var taskPreviewEditWriteOp = writeOpMode{
 		return &input, nil
 	},
 	applyFlags: func(cmd *cobra.Command, decoded any) {
-		input := decoded.(*types.TaskEditInput)
-		applyAddressLevelFlags(cmd, func(address, level string) {
-			if address != "" {
-				input.Address = address
-			}
-			if level != "" {
-				input.Level = level
-			}
-		})
+		taskApplyAddressLevelFlags[*types.TaskEditInput](cmd, decoded)
 	},
 	call: func(ctx context.Context, c *client.Client, token string, decoded any) (any, error) {
 		return c.PreviewEditPayload(ctx, token, *decoded.(*types.TaskEditInput))

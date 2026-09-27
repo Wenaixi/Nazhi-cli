@@ -33,7 +33,6 @@ var selfEvalSubmitCmd = &cobra.Command{
   nazhi self-eval submit --token xxx --payload '{"bxqhzr":"会做人目标","bxqbx":"表现","bxqys":"优势"}'`,
 	Run: func(cmd *cobra.Command, args []string) {
 		payloadRaw, _ := cmd.Flags().GetString("payload")
-		comment, _ := cmd.Flags().GetString("comment")
 		payloadMode := cmd.Flags().Changed("payload")
 
 		if payloadMode && payloadRaw == "" {
@@ -73,23 +72,19 @@ var selfEvalSubmitCmd = &cobra.Command{
 			return
 		}
 
-		// 纯文本模式：--comment
-		if comment == "" || comment == "-" {
-			if isTerminalStdin() {
-				printPrompt("请输入自我评价内容（Ctrl+D 结束）: ")
-			}
-			var readErr error
-			comment, readErr = readStdinWithTimeout(cmd.Context(), 60)
-			if readErr != nil {
-				printError(fmt.Errorf("读取 stdin 评价内容失败: %w", readErr))
-				return
-			}
-			if comment == "" {
-				printParamError(errors.New("评价内容不能为空"))
-				return
-			}
+		// 纯文本模式：--comment（空或 - 则从 stdin 读取，语义由
+		// readCommentFromFlagOrStdin 单点承载）
+		var comment string
+		comment, err = readCommentFromFlagOrStdin(cmd, "comment",
+			"请输入自我评价内容（Ctrl+D 结束）: ")
+		if err != nil {
+			printError(fmt.Errorf("读取 stdin 评价内容失败: %w", err))
+			return
 		}
-
+		if comment == "" {
+			printParamError(errors.New("评价内容不能为空"))
+			return
+		}
 		printVerbose("正在提交自我评价...")
 		err = c.SubmitSelfEvaluation(cmd.Context(), token, comment)
 		if err != nil {
@@ -105,6 +100,30 @@ func init() {
 	registerBizFlags(selfEvalSubmitCmd)
 	selfEvalSubmitCmd.Flags().String("comment", "", "评价文本（空或 - 则从 stdin 读取）")
 	selfEvalSubmitCmd.Flags().String("payload", "", "结构化评价 JSON（与 --comment 互斥，可用 @file.json 或 - 读取）")
+}
+
+// stdinTimeoutSec 是从 stdin 读取评价内容的超时上限（秒）。
+// 两处（submit / grad-submit）共用，避免 60 秒字面量双处硬编码漂移。
+const stdinTimeoutSec = 60
+
+// readCommentFromFlagOrStdin 是「--comment 为空或 - 时从 stdin 读取」的单点实现。
+//
+// 此前 self-eval submit 与 grad-submit 各自内联同一段：空或 - 判断 →
+// isTerminalStdin → printPrompt → readStdinWithTimeout(60) → 判空参数错误。
+// stdin 交互语义（终端检测/超时）收为本函数单点，两命令各一行调用。
+//
+// 返回：读到的评论文本与错误。error 仅表示 stdin 读取失败（超时/取消/IO），
+// 判空参数错误是调用点知识（读回空串时由调用方 printParamError）——
+// 避免 helper 返回「空串参数错」与「读取错」两类错误让调用方区分。
+func readCommentFromFlagOrStdin(cmd *cobra.Command, flagName, promptText string) (string, error) {
+	comment, _ := cmd.Flags().GetString(flagName)
+	if comment != "" && comment != "-" {
+		return comment, nil
+	}
+	if isTerminalStdin() {
+		printPrompt(promptText)
+	}
+	return readStdinWithTimeout(cmd.Context(), stdinTimeoutSec)
 }
 
 // readStdinWithTimeout 从 stdin 读取全部内容（读到 EOF），超过 timeoutSec 秒未完成则返回超时错误。

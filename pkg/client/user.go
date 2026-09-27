@@ -2,9 +2,7 @@ package client
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"net/http"
 	"strconv"
 	"strings"
 
@@ -50,33 +48,23 @@ func (c *Client) GetMyInfo(ctx context.Context, token string) (*types.UserInfo, 
 // getMyInfoRaw 是 GetMyInfo 的内部版本（不预热 session），供 ActivateSession
 // 步骤 4 调用——避免外层持 sm.mu 时重入死锁。
 //
-// 注意：本方法不迁移到 doBizGetDecode，因为它需要自定义 Referer header (/modify)，
-// 而 doBizGetDecode/doBizAndDecode 内部固定使用 bizHeaders()（Referer=/homepage）。
+// 请求-解析-业务码段走 doBizGetRaw（与 doBizGetDecode 同骨架，只是不预热），
+// 解码器链与空语义（returnData → dataMap 双解码器 + ErrEmptyUserInfo）是
+// 本调用点知识，保留在此；postProcessUserInfo 钩子在解码成功后立即执行
+// （位于激活持锁路径内，仅纯 CPU，学校 SSO 回退由出口在锁外补做——P1-B）。
 func (c *Client) getMyInfoRaw(ctx context.Context, token string) (*types.UserInfo, error) {
 	headers := c.bizHeaders(token)
 	// 固定 /modify 为 SDK 约定，非前端精确值，服务端不校验（前端实际为页面路径，服务端不校验 Referer）。
 	headers["Referer"] = c.bizURL("/modify")
 
-	bodyBytes, err := c.httpDo(ctx, http.MethodGet,
-		c.bizURL("/api/studentInfo/getMyInfo"),
-		nil, headers, "",
-	)
-	if err != nil {
-		return nil, fmt.Errorf("GetMyInfo 请求失败: %w", err)
-	}
-
-	resp, err := decodeOrInvalidResponse("GetMyInfo", bodyBytes)
+	resp, err := c.doBizGetRaw(ctx, "GetMyInfo", "/api/studentInfo/getMyInfo", headers)
 	if err != nil {
 		return nil, err
 	}
 
-	if err := types.CheckCode(resp); err != nil {
-		return nil, fmt.Errorf("获取用户信息业务错误: %w", errors.Join(ErrBusinessRejected, err))
-	}
-
 	for _, dec := range []func() (*types.UserInfo, error){
-		func() (*types.UserInfo, error) { return types.DecodeReturnData[types.UserInfo](resp) },
-		func() (*types.UserInfo, error) { return types.DecodeDataMap[types.UserInfo](resp) },
+		func() (*types.UserInfo, error) { return types.DecodeReturnData[types.UserInfo](*resp) },
+		func() (*types.UserInfo, error) { return types.DecodeDataMap[types.UserInfo](*resp) },
 	} {
 		v, dErr := dec()
 		if dErr == nil && v != nil {

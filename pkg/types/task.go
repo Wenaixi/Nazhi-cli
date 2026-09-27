@@ -128,7 +128,47 @@ type Task struct {
 	GradeID           *int64  `json:"gradeId,omitempty"`
 }
 
+// ActivityFields 是任务提交/编辑输入中按活动类型区分的全部活动字段聚合。
+//
+// 对应前端 managementRightBottom.vue 的 form：14 类活动类型共用同一组字段，
+// 用户按类型填写其中一部分，空串原样提交（不发明学校名/默认等级）。
+// 它不是 wire 类型（不进任何 JSON tag），只作为 TaskInput 的聚合访问单元，
+// 让 buildTaskPayload 一次取值而非逐字段 Get* 回声。
+type ActivityFields struct {
+	PlayRole            string
+	Address             string
+	Level               string
+	Name                string
+	HostName            string
+	CircleDate          string
+	TermName            string
+	Rank                string
+	ActivityName        string
+	SportsName          string
+	TeamName            string
+	OrgName             string
+	ResultsName         string
+	ObtainTime          string
+	SpecialtyTechnology string
+	LikeSpecialty1      string
+	LikeSpecialty2      string
+	LikeSpecialty3      string
+	Hours               string
+	CircleBeginDate     string
+	CircleEndDate       string
+	CheckResult         string
+	PatentType          string
+	PatentNum           string
+}
+
 // TaskInput 定义任务提交/编辑输入的公共接口，用于提取公共 payload 构建逻辑。
+//
+// 接口只保留真正的差异点：ID（新增 nil / 编辑有值）、任务与正文、图片访问器、
+// 活动字段聚合。24 个活动字段不再逐字段 Get* 回声——消费方经 GetActivityFields
+// 一次取值，新增字段只动 ActivityFields 一处，不再「改接口 + 两个实现」三处同步。
+//
+// 兼容：具体类型仍保留 deprecated 薄壳 Getter（转发聚合字段），外部调用方
+// 直接调 input.GetName() 仍编译通过。
 type TaskInput interface {
 	Validate() error
 	GetID() *int64
@@ -136,30 +176,7 @@ type TaskInput interface {
 	GetContent() string
 	GetImagePaths() []string
 	GetImageIDs() []int64
-	GetPlayRole() string
-	GetAddress() string
-	GetLevel() string
-	GetName() string
-	GetHostName() string
-	GetCircleDate() string
-	GetTermName() string
-	GetRank() string
-	GetActivityName() string
-	GetSportsName() string
-	GetTeamName() string
-	GetOrgName() string
-	GetResultsName() string
-	GetObtainTime() string
-	GetSpecialtyTechnology() string
-	GetLikeSpecialty1() string
-	GetLikeSpecialty2() string
-	GetLikeSpecialty3() string
-	GetHours() string
-	GetCircleBeginDate() string
-	GetCircleEndDate() string
-	GetCheckResult() string
-	GetPatentType() string
-	GetPatentNum() string
+	GetActivityFields() ActivityFields
 }
 
 // TaskSubmitInput 是公开给 SDK 调用方的最小任务提交输入。
@@ -205,13 +222,24 @@ type TaskSubmitInput struct {
 	LikeSpecialty1      string
 	LikeSpecialty2      string
 	LikeSpecialty3      string
-	// Hours：可选字符串。空且任务预设>0 → 用元数据；空且预设≤0 → 校验失败；非空优先用户值。
-	Hours           string
-	CircleBeginDate string
-	CircleEndDate   string
-	CheckResult     string
-	PatentType      string
-	PatentNum       string
+	Hours               string
+	CircleBeginDate     string
+	CircleEndDate       string
+	CheckResult         string
+	PatentType          string
+	PatentNum           string
+}
+
+// SetAddressLevel 供 CLI --address/--level flag 覆盖逻辑写入（经
+// taskApplyAddressLevelFlags 泛型约束访问）。仅 CLI 边界使用，SDK 调用方
+// 直接赋值字段即可。
+func (in *TaskSubmitInput) SetAddressLevel(address, level string) {
+	if address != "" {
+		in.Address = address
+	}
+	if level != "" {
+		in.Level = level
+	}
 }
 
 func (in TaskSubmitInput) Validate() error {
@@ -225,11 +253,29 @@ func (in TaskSubmitInput) Validate() error {
 }
 
 // TaskInput 接口实现：TaskSubmitInput 没有 ID 字段，新增记录时 ID 为 nil。
-func (in TaskSubmitInput) GetID() *int64                  { return nil }
-func (in TaskSubmitInput) GetTaskID() int64               { return in.TaskID }
-func (in TaskSubmitInput) GetContent() string             { return in.Content }
-func (in TaskSubmitInput) GetImagePaths() []string        { return in.ImagePaths }
-func (in TaskSubmitInput) GetImageIDs() []int64           { return in.ImageIDs }
+// GetActivityFields 返回活动字段聚合（值拷贝）；以下 Get* 为 deprecated 薄壳，
+// 转发聚合字段，仅供外部旧调用方直接取值，新代码请走 GetActivityFields。
+func (in TaskSubmitInput) GetID() *int64           { return nil }
+func (in TaskSubmitInput) GetTaskID() int64        { return in.TaskID }
+func (in TaskSubmitInput) GetContent() string      { return in.Content }
+func (in TaskSubmitInput) GetImagePaths() []string { return in.ImagePaths }
+func (in TaskSubmitInput) GetImageIDs() []int64    { return in.ImageIDs }
+func (in TaskSubmitInput) GetActivityFields() ActivityFields {
+	return ActivityFields{
+		PlayRole: in.PlayRole, Address: in.Address, Level: in.Level,
+		Name: in.Name, HostName: in.HostName, CircleDate: in.CircleDate,
+		TermName: in.TermName, Rank: in.Rank, ActivityName: in.ActivityName,
+		SportsName: in.SportsName, TeamName: in.TeamName, OrgName: in.OrgName,
+		ResultsName: in.ResultsName, ObtainTime: in.ObtainTime,
+		SpecialtyTechnology: in.SpecialtyTechnology,
+		LikeSpecialty1:      in.LikeSpecialty1, LikeSpecialty2: in.LikeSpecialty2,
+		LikeSpecialty3: in.LikeSpecialty3, Hours: in.Hours,
+		CircleBeginDate: in.CircleBeginDate, CircleEndDate: in.CircleEndDate,
+		CheckResult: in.CheckResult, PatentType: in.PatentType, PatentNum: in.PatentNum,
+	}
+}
+
+// Deprecated: 薄壳 Getter 转发聚合字段，仅供旧调用方；新代码走 GetActivityFields。
 func (in TaskSubmitInput) GetPlayRole() string            { return in.PlayRole }
 func (in TaskSubmitInput) GetAddress() string             { return in.Address }
 func (in TaskSubmitInput) GetLevel() string               { return in.Level }
@@ -350,6 +396,14 @@ type TaskEditInput struct {
 	PatentNum           string
 }
 
+func (in *TaskEditInput) SetAddressLevel(address, level string) {
+	if address != "" {
+		in.Address = address
+	}
+	if level != "" {
+		in.Level = level
+	}
+}
 func (in TaskEditInput) Validate() error {
 	if in.ID <= 0 {
 		return ErrTaskInputIDRequired
@@ -364,11 +418,28 @@ func (in TaskEditInput) Validate() error {
 }
 
 // TaskInput 接口实现：TaskEditInput 的 ID 字段用于修改已有记录。
-func (in TaskEditInput) GetID() *int64                  { return &in.ID }
-func (in TaskEditInput) GetTaskID() int64               { return in.TaskID }
-func (in TaskEditInput) GetContent() string             { return in.Content }
-func (in TaskEditInput) GetImagePaths() []string        { return in.ImagePaths }
-func (in TaskEditInput) GetImageIDs() []int64           { return in.ImageIDs }
+// GetActivityFields 返回活动字段聚合（值拷贝）；以下 Get* 为 deprecated 薄壳。
+func (in TaskEditInput) GetID() *int64           { return &in.ID }
+func (in TaskEditInput) GetTaskID() int64        { return in.TaskID }
+func (in TaskEditInput) GetContent() string      { return in.Content }
+func (in TaskEditInput) GetImagePaths() []string { return in.ImagePaths }
+func (in TaskEditInput) GetImageIDs() []int64    { return in.ImageIDs }
+func (in TaskEditInput) GetActivityFields() ActivityFields {
+	return ActivityFields{
+		PlayRole: in.PlayRole, Address: in.Address, Level: in.Level,
+		Name: in.Name, HostName: in.HostName, CircleDate: in.CircleDate,
+		TermName: in.TermName, Rank: in.Rank, ActivityName: in.ActivityName,
+		SportsName: in.SportsName, TeamName: in.TeamName, OrgName: in.OrgName,
+		ResultsName: in.ResultsName, ObtainTime: in.ObtainTime,
+		SpecialtyTechnology: in.SpecialtyTechnology,
+		LikeSpecialty1:      in.LikeSpecialty1, LikeSpecialty2: in.LikeSpecialty2,
+		LikeSpecialty3: in.LikeSpecialty3, Hours: in.Hours,
+		CircleBeginDate: in.CircleBeginDate, CircleEndDate: in.CircleEndDate,
+		CheckResult: in.CheckResult, PatentType: in.PatentType, PatentNum: in.PatentNum,
+	}
+}
+
+// Deprecated: 薄壳 Getter 转发聚合字段，仅供旧调用方；新代码走 GetActivityFields。
 func (in TaskEditInput) GetPlayRole() string            { return in.PlayRole }
 func (in TaskEditInput) GetAddress() string             { return in.Address }
 func (in TaskEditInput) GetLevel() string               { return in.Level }

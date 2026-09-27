@@ -97,21 +97,16 @@ func normalizeTaskInputJSON(data []byte) ([]byte, error) {
 		if len(raw) == 0 || raw[0] == '"' || bytes.Equal(raw, []byte("null")) {
 			continue
 		}
-
 		var number json.Number
 		if err := json.Unmarshal(raw, &number); err != nil {
 			return nil, fmt.Errorf("%s: 期望字符串或数字: %w", name, err)
 		}
 		if name != "hours" {
-			value, err := strconv.ParseFloat(number.String(), 64)
-			if err != nil || math.IsNaN(value) || math.IsInf(value, 0) {
-				return nil, fmt.Errorf("%s: 数字代码必须是有限整数", name)
+			value, err := normalizeTaskInputNumericCode(number)
+			if err != nil {
+				return nil, fmt.Errorf("%s: %w", name, err)
 			}
-			integer, ok := new(big.Rat).SetString(number.String())
-			if !ok || !integer.IsInt() {
-				return nil, fmt.Errorf("%s: 数字代码必须是有限整数", name)
-			}
-			number = json.Number(integer.Num().String())
+			number = json.Number(value)
 		}
 		encoded, err := json.Marshal(number.String())
 		if err != nil {
@@ -121,6 +116,27 @@ func normalizeTaskInputJSON(data []byte) ([]byte, error) {
 	}
 
 	return json.Marshal(fields)
+}
+
+// normalizeTaskInputNumericCode 把「数字代码必须是有限整数」判定收为具名函数，
+// 并显式声明与 pkg/types/flexnum 的合法集合差异。
+//
+// CLI --payload 是用户输入边界：level/checkResult/playRole 等数字代码字段
+// 接受任意大整数（big.Rat 判定），转成字符串码后由服务端按字符串语义消费，
+// 大数转字符串无害。flexnum（SDK 结构化解码路径）则拒绝 2^63 以上——它防的
+// 是 int64 溢出回绕，两类出口的约束不同，**差异是有意设计**，两处各自演进。
+//
+// 若未来发现平台对超大数字代码的真实行为，应统一两处口径并删除本差异声明。
+func normalizeTaskInputNumericCode(number json.Number) (string, error) {
+	value, err := strconv.ParseFloat(number.String(), 64)
+	if err != nil || math.IsNaN(value) || math.IsInf(value, 0) {
+		return "", fmt.Errorf("数字代码必须是有限整数")
+	}
+	integer, ok := new(big.Rat).SetString(number.String())
+	if !ok || !integer.IsInt() {
+		return "", fmt.Errorf("数字代码必须是有限整数")
+	}
+	return integer.Num().String(), nil
 }
 
 func findTaskInputField(fields map[string]json.RawMessage, name string) (json.RawMessage, bool) {

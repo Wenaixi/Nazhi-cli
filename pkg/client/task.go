@@ -25,6 +25,63 @@ import (
 // 如未来业务接口维度数 > 50，可考虑调到此常量或暴露为 Client 字段。
 const fetchTasksConcurrentLimit = 8
 
+// partialTasksOutcome 是任务维度 partial 语义的单一决策表。
+//
+// FetchTasks（结构化）与 FetchTasksJSON（透传）在 collectDims/ParallelDims
+// 之后各写了一份约 40-50 行的 partial 决策（取消占位、仅取消分支、全失败/
+// 部分失败双包装），除产出形状（[]Task vs json.RawMessage）与文案措辞外
+// 逐段同构。收为本纯函数后，partial 语义（全失败/部分成功/仅取消/混合）
+// 只在一处定义与测试。
+//
+// 入参：
+//   - merged  bool：是否已有合并出的部分结果（>0 个维度成功）
+//   - bizErrs / ctxErrs：业务失败与 context 取消的维度错误
+//   - cancelledCount：因取消失败的维度数（经 classifyDimErrors 得出）
+//   - callerName：错误前缀（"FetchTasks" / "FetchTasksJSON"）
+//   - ctxCancelled：egErr 是否本身就是 context 错误
+//
+// 返回：错误。所有哨兵（ErrRetryable / ErrBusinessRejected）链完整保留，
+// 供调用方 errors.Is 判定；文案含 callerName 前缀。
+func partialTasksOutcome(merged bool, bizErrs, ctxErrs []error, cancelledCount int, callerName string, ctxCancelled error) error {
+	// 仅取消分支：egErr 是 context 错误（或在非 egErr 路径 canceled 分支先判）。
+	// 有部分结果 → 双包 ErrBusinessRejected + ErrRetryable；
+	// 无部分结果 → 裸 ErrRetryable。
+	if ctxCancelled != nil {
+		if merged {
+			return fmt.Errorf("%w: %s context 取消后部分维度成功: %w",
+				ErrBusinessRejected,
+				callerName,
+				fmt.Errorf("%w: %w", ErrRetryable, ctxCancelled))
+		}
+		return fmt.Errorf("%w: %s 全部维度因 context 取消失败: %w", ErrRetryable, callerName, ctxCancelled)
+	}
+
+	var cancelPlaceholder error
+	if cancelledCount > 0 {
+		cancelPlaceholder = fmt.Errorf("%w: %d 个维度因 context 取消而失败", ErrRetryable, cancelledCount)
+	}
+
+	// 仅取消（无业务失败）→ 即使有部分结果也是取消主导：有结果双包、
+	// 无结果裸 ErrRetryable。
+	if len(bizErrs) == 0 && cancelledCount > 0 {
+		joined := errors.Join(append(ctxErrs, cancelPlaceholder)...)
+		if !merged {
+			return joined
+		}
+		return fmt.Errorf("%w: %s context 取消后部分维度成功: %w",
+			ErrBusinessRejected, callerName, joined)
+	}
+
+	// 混合/业务失败：join 全部错误；有部分结果 → 部分失败，无 → 全失败。
+	joined := errors.Join(append(append(bizErrs, ctxErrs...), cancelPlaceholder)...)
+	if !merged {
+		return fmt.Errorf("%w: %s 全部 %d 个维度均失败: %w",
+			ErrBusinessRejected, callerName, len(bizErrs), joined)
+	}
+	return fmt.Errorf("%w: %s %d 个维度失败: %w",
+		ErrBusinessRejected, callerName, len(bizErrs), joined)
+}
+
 // maxTaskContentRunes 是写实 content 的字数上限，对齐前端 el-input
 // maxlength="200"（managementRightBottom.vue:389，浏览器硬截断）。
 const maxTaskContentRunes = 200
@@ -101,12 +158,9 @@ func (c *Client) FetchTasks(ctx context.Context, token string) ([]types.Task, er
 
 	if egErr != nil {
 		if isContextError(egErr) {
-			if len(result.Items) > 0 {
-				return result.Items, fmt.Errorf("%w: FetchTasks context 取消后部分维度成功: %w",
-					ErrBusinessRejected,
-					fmt.Errorf("%w: %w", ErrRetryable, egErr))
-			}
-			return nil, fmt.Errorf("%w: FetchTasks 全部维度因 context 取消失败: %w", ErrRetryable, egErr)
+			// egErr 本身就是 context 错误：并入 partial 决策表（有部分结果双包、
+			// 无部分结果裸 ErrRetryable）。
+			return result.Items, partialTasksOutcome(len(result.Items) > 0, nil, nil, 0, "FetchTasks", egErr)
 		}
 		return nil, fmt.Errorf("FetchTasks 并发拉取失败: %w", egErr)
 	}
@@ -116,34 +170,14 @@ func (c *Client) FetchTasks(ctx context.Context, token string) ([]types.Task, er
 		return allTasks, nil
 	}
 
-	bizErrs := result.BizErrors
-	ctxErrs := result.ContextErrors
-	cancelledCount := result.CancelledCount
-
-	var cancelPlaceholder error
-	if cancelledCount > 0 {
-		cancelPlaceholder = fmt.Errorf("%w: %d 个维度因 context 取消而失败", ErrRetryable, cancelledCount)
-	}
-
-	if len(bizErrs) == 0 && cancelledCount > 0 {
-		joined := errors.Join(append(ctxErrs, cancelPlaceholder)...)
-		if len(allTasks) == 0 {
-			return nil, joined
-		}
-		return allTasks, fmt.Errorf("%w: FetchTasks context 取消后部分维度成功: %w",
-			ErrBusinessRejected, joined)
-	}
-
-	joined := errors.Join(append(append(bizErrs, ctxErrs...), cancelPlaceholder)...)
-	failedCount := len(bizErrs)
-
-	if len(allTasks) == 0 {
-		return nil, fmt.Errorf("%w: FetchTasks 全部 %d 个维度均失败: %w",
-			ErrBusinessRejected, failedCount, joined)
-	}
-
-	return allTasks, fmt.Errorf("%w: FetchTasks %d 个维度部分失败: %w",
-		ErrBusinessRejected, failedCount, joined)
+	return allTasks, partialTasksOutcome(
+		len(allTasks) > 0,
+		result.BizErrors,
+		result.ContextErrors,
+		result.CancelledCount,
+		"FetchTasks",
+		nil,
+	)
 }
 func (c *Client) fetchTasksForDimension(ctx context.Context, dim types.Dimension, headers map[string]string) (tasks []types.Task, err error) {
 	// 上下文取消（Canceled/DeadlineExceeded）直接 propagate，
@@ -155,27 +189,20 @@ func (c *Client) fetchTasksForDimension(ctx context.Context, dim types.Dimension
 
 	// 说明：int64 参数纯数字，直接 strconv.FormatInt 拼接 URL 安全，
 	// 无需 URL 编码（数字不包含特殊字符）。如需未来扩展为字符串参数，
-	// 应改用 url.Values.Encode()。
-	statURL := c.bizURL("/api/studentCircleNew/getCircleStatistics") + "?dimensionId=" + strconv.FormatInt(dim.ID, 10)
-	statBody, err := c.httpDo(ctx, http.MethodGet, statURL, nil, headers, "")
+	// 应改用 url.Values.Encode()。请求段（httpDo→解析→业务码）由
+	// doBizGetRaw 单点承载，维度上下文错误包装保留在本调用点。
+	statResp, err := c.doBizGetRaw(ctx, "FetchTasks getCircleStatistics", "/api/studentCircleNew/getCircleStatistics?dimensionId="+strconv.FormatInt(dim.ID, 10), headers)
 	if err != nil {
 		if isContextError(err) {
 			return nil, err // 上下文取消应 propagate，不做 best-effort 吞没
 		}
 		c.logDebug("FetchTasks 维度 %d(%s) 请求失败: %v", dim.ID, dim.Name, err)
-		return nil, err // propagate 网络错误到 dimErrs，不再静默吞咽
+		// 附加维度诊断上下文（dim id/name），让 SDK 用户能定位失败维度。
+		// 哨兵链保留（err 已含 ErrInvalidResponse / ErrBusinessRejected）。
+		return nil, fmt.Errorf("维度 %d(%s): %w", dim.ID, dim.Name, err)
 	}
 
-	statResp, err := decodeOrInvalidResponse("FetchTasks getCircleStatistics", statBody)
-	if err != nil {
-		c.logDebug("FetchTasks 维度 %d(%s) 响应解析失败: %v", dim.ID, dim.Name, err)
-		return nil, err // propagate 解析错误到 dimErrs，不再静默吞咽（含 ErrInvalidResponse 哨兵）
-	}
-	if err := types.CheckCode(statResp); err != nil {
-		return nil, fmt.Errorf("%w: 维度 %d(%s) 业务错误: %w", ErrBusinessRejected, dim.ID, dim.Name, err)
-	}
-
-	tasks, err = types.DecodeDataList[types.Task](statResp)
+	tasks, err = types.DecodeDataList[types.Task](*statResp)
 	if err != nil {
 		c.logDebug("FetchTasks 维度 %d(%s) 任务解析失败: %v", dim.ID, dim.Name, err)
 		return nil, err // propagate 任务列表解析错误到 dimErrs，不再静默吞咽
@@ -307,10 +334,13 @@ func (c *Client) buildTaskPayload(ctx context.Context, token string, input types
 	if err != nil {
 		return nil, fmt.Errorf("%s 获取任务元数据失败: %w", callerName, err)
 	}
+	// 活动字段聚合一次取值：hours 依赖元数据判定，用户字段 Trim 后写入。
+	// GetActivityFields 是值拷贝，只取一次避免重复组装。
+	af := input.GetActivityFields()
 
 	// hours 依赖任务元数据（meta.Hours 决定是否只读自动填、meta.Type 决定
 	// 是否必填），只能在元数据取回后判定——无法提前到网络请求之前。
-	hours, err := parseHours(input.GetHours(), meta.Hours, meta.Type)
+	hours, err := parseHours(af.Hours, meta.Hours, meta.Type)
 	if err != nil {
 		return nil, err
 	}
@@ -357,24 +387,25 @@ func (c *Client) buildTaskPayload(ctx context.Context, token string, input types
 		}
 	}
 
-	// 用户字段：Trim 后原样写入；前端不会自动填学校名 / 默认等级 5
-	address := strings.TrimSpace(input.GetAddress())
-	playRole := strings.TrimSpace(input.GetPlayRole())
-	level := strings.TrimSpace(input.GetLevel())
-	name := strings.TrimSpace(input.GetName())
-	hostName := strings.TrimSpace(input.GetHostName())
-	circleDate := strings.TrimSpace(input.GetCircleDate())
-	rank := strings.TrimSpace(input.GetRank())
-	activityName := strings.TrimSpace(input.GetActivityName())
-	sportsName := strings.TrimSpace(input.GetSportsName())
-	teamName := strings.TrimSpace(input.GetTeamName())
-	orgName := strings.TrimSpace(input.GetOrgName())
-	resultsName := strings.TrimSpace(input.GetResultsName())
-	obtainTime := strings.TrimSpace(input.GetObtainTime())
-	specialtyTechnology := strings.TrimSpace(input.GetSpecialtyTechnology())
-	likeSpecialty1 := strings.TrimSpace(input.GetLikeSpecialty1())
-	likeSpecialty2 := strings.TrimSpace(input.GetLikeSpecialty2())
-	likeSpecialty3 := strings.TrimSpace(input.GetLikeSpecialty3())
+	// 用户字段：Trim 后原样写入；前端不会自动填学校名 / 默认等级 5。
+	// 活动字段经 GetActivityFields 聚合一次取值，不再逐字段 Get* 回声。
+	address := strings.TrimSpace(af.Address)
+	playRole := strings.TrimSpace(af.PlayRole)
+	level := strings.TrimSpace(af.Level)
+	name := strings.TrimSpace(af.Name)
+	hostName := strings.TrimSpace(af.HostName)
+	circleDate := strings.TrimSpace(af.CircleDate)
+	rank := strings.TrimSpace(af.Rank)
+	activityName := strings.TrimSpace(af.ActivityName)
+	sportsName := strings.TrimSpace(af.SportsName)
+	teamName := strings.TrimSpace(af.TeamName)
+	orgName := strings.TrimSpace(af.OrgName)
+	resultsName := strings.TrimSpace(af.ResultsName)
+	obtainTime := strings.TrimSpace(af.ObtainTime)
+	specialtyTechnology := strings.TrimSpace(af.SpecialtyTechnology)
+	likeSpecialty1 := strings.TrimSpace(af.LikeSpecialty1)
+	likeSpecialty2 := strings.TrimSpace(af.LikeSpecialty2)
+	likeSpecialty3 := strings.TrimSpace(af.LikeSpecialty3)
 
 	payload := &types.TaskAddCirclePayload{
 		ID:                  input.GetID(),
@@ -389,13 +420,13 @@ func (c *Client) buildTaskPayload(ctx context.Context, token string, input types
 		CircleTypeID:        meta.CircleTypeID,
 		DimensionID:         meta.DimensionID,
 		Hours:               hours,
-		CircleBeginDate:     strings.TrimSpace(input.GetCircleBeginDate()),
-		CircleEndDate:       strings.TrimSpace(input.GetCircleEndDate()),
-		CheckResult:         strings.TrimSpace(input.GetCheckResult()),
-		PatentType:          strings.TrimSpace(input.GetPatentType()),
-		PatentNum:           strings.TrimSpace(input.GetPatentNum()),
+		CircleBeginDate:     strings.TrimSpace(af.CircleBeginDate),
+		CircleEndDate:       strings.TrimSpace(af.CircleEndDate),
+		CheckResult:         strings.TrimSpace(af.CheckResult),
+		PatentType:          strings.TrimSpace(af.PatentType),
+		PatentNum:           strings.TrimSpace(af.PatentNum),
 		Address:             address,
-		TermName:            strings.TrimSpace(input.GetTermName()),
+		TermName:            strings.TrimSpace(af.TermName),
 		ActivityName:        activityName,
 		SportsName:          sportsName,
 		TeamName:            teamName,

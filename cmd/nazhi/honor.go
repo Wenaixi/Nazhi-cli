@@ -1,12 +1,13 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 
+	"github.com/Wenaixi/nazhi-cli/pkg/client"
 	"github.com/Wenaixi/nazhi-cli/pkg/envelope"
-	"github.com/Wenaixi/nazhi-cli/pkg/types"
 	"github.com/spf13/cobra"
 )
 
@@ -33,20 +34,14 @@ var honorTypesCmd = &cobra.Command{
   nazhi honor types --token eyJhbGciOiJIUzI1NiJ9.xxx --base-url http://139.159.205.146:8280`,
 	Args: cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
-		c, token, err := buildBizClient(cmd)
-		if err != nil {
-			printParamError(err)
-			return
-		}
-
-		printVerbose("正在获取荣誉类型...")
-		raw, err := c.GetHonorTypesJSON(cmd.Context(), token)
-		if err != nil {
-			printError(fmt.Errorf("获取荣誉类型失败: %w", err))
-			return
-		}
-
-		printEnvelope(envelope.Success(json.RawMessage(raw)))
+		runReadOp(cmd, readOpMode{
+			verboseMsg:  "正在获取荣誉类型...",
+			errorPrefix: "获取荣誉类型失败",
+			fetch: func(ctx context.Context, c *client.Client, token string) (any, error) {
+				return c.GetHonorTypesJSON(ctx, token)
+			},
+			success: envelope.Success,
+		})
 	},
 }
 
@@ -195,27 +190,22 @@ var honorLevelsCmd = &cobra.Command{
 	Example: "  nazhi honor levels --token eyJhbGciOiJIUzI1NiJ9.xxx --type-id 1147",
 	Args:    cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
-		typeID, _ := cmd.Flags().GetInt64("type-id")
-		if typeID <= 0 {
-			printParamError(errors.New("--type-id 必须为正整数"))
-			return
-		}
-
-		c, token, err := buildBizClient(cmd)
-		if err != nil {
-			printParamError(err)
-			return
-		}
-		printVerbose("正在获取荣誉级别...")
-		opts, err := c.GetHonorLevel(cmd.Context(), token, typeID)
-		if err != nil {
-			printError(fmt.Errorf("获取荣誉级别失败: %w", err))
-			return
-		}
-		if opts == nil {
-			opts = []types.HonorSelectOption{}
-		}
-		printEnvelope(envelope.Success(opts))
+		runReadOp(cmd, readOpMode{
+			verboseMsg:  "正在获取荣誉级别...",
+			errorPrefix: "获取荣誉级别失败",
+			validate: func(cmd *cobra.Command) error {
+				typeID, _ := cmd.Flags().GetInt64("type-id")
+				if typeID <= 0 {
+					return errors.New("--type-id 必须为正整数")
+				}
+				return nil
+			},
+			fetch: func(ctx context.Context, c *client.Client, token string) (any, error) {
+				typeID, _ := cmd.Flags().GetInt64("type-id")
+				return c.GetHonorLevel(ctx, token, typeID)
+			},
+			success: readListSuccess,
+		})
 	},
 }
 

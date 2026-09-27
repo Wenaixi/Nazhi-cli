@@ -1,10 +1,11 @@
-// pagination_bounds.go：写实分页的页数推导纯函数。
+// pagination_bounds.go：写实分页安全——页数推导纯函数与四道闸上限常量。
 //
-// 提取动因（2026-09-26 架构核实）：页数下界推导在 submitted.go 与
+// 页数推导提取动因（2026-09-26 架构核实）：下界推导在 submitted.go 与
 // raw_json.go 三处逐字重复（各 4 行），limit 路径的 endPage 收敛又各写一遍。
-// 重复导致同类修复要审多份实现与多套测试。
+// 四道闸常量集中动因（2026-09-27）：此前散落 raw_json.go（页数/字节/维度）
+// 与 submitted.go 内联（条数），新取数路径要考古四处才能装配。
 //
-// 抽出为纯函数的原因：这些规则是分页安全的不变量（v1.6.4 / 84982af
+// 抽出为纯函数/常量的原因：这些规则是分页安全的不变量（v1.6.4 / 84982af
 // 确立），必须只有一处定义，且可被行为矩阵独立验证——它们不依赖
 // Client 状态、不发请求，纯 CPU 计算。
 //
@@ -13,8 +14,46 @@
 // 锁定该契约），推导值仅用于内部翻页决策。
 package client
 
-// derivePageBounds 返回翻页时应抓取的页数，已做上界钳制。
+import "math"
+
+// ─── 分页安全上限（四道闸）───
 //
+// 四条内存安全闸的上限常量集中于此，让「防服务端声明驱动 make 分配 OOM」
+// 的知识单点定义。此前散落 raw_json.go（页数/字节/维度）与 submitted.go
+// 内联（条数），新取数路径要考古四处才能装配。各闸语义：
+//
+//   - maxTotalPage（页数闸）：TotalPage 来自服务端单字段声明，恶意值直接
+//     驱动 make 分配会 OOM；10000 页 × pageSize=500 ≈ 500 万条，远超任何
+//     真实业务数据量。
+//   - maxAssembleBuffer（字节闸）：多页合并的原始字节预算。len(raw1)×totalPage
+//     可达 4MB×10000=40GB 单次 make，64MB 足够覆盖任何真实拼接输出。
+//   - maxSubmittedRecords（条数闸）：结构化路径的容量上界，与字节闸解耦
+//     （页长可被 WithSubmittedPageSize 调大，仅页数×页长的钳制会膨胀）。
+//   - maxFetchTasksDims（维度闸）：任务维度数上界，恶意值驱动全维度并发
+//     拉取 × 单页 4MB 累积无预算；128 维远超任何真实学校维度集。
+//
+// 钳制/预算纯函数（derivePageBounds / estimatePagesBudgeted 等）同文件承载，
+// 各调用点只消费统一入口。
+const (
+	maxTotalPage        = 10000
+	maxAssembleBuffer   = 64 << 20
+	maxSubmittedRecords = 100_000
+	maxFetchTasksDims   = 128
+)
+
+// maxSubmittedCapacityCeiling 返回「钳制页数 × pageSize」这一容量上界，
+// 在乘法会溢出 int 时退回到 math.MaxInt。
+//
+// 调用方以除法形态比较（capacity/maxTotalPage > pageSize）判定越界，
+// 因此本函数只需在乘法安全时给出精确值、溢出时给出一个必然大于任何
+// capacity 的饱和值——后者随即会被下游 maxSubmittedRecords 条数闸拦下。
+func maxSubmittedCapacityCeiling(pageSize int) int {
+	if pageSize > 0 && maxTotalPage > math.MaxInt/pageSize {
+		return math.MaxInt
+	}
+	return maxTotalPage * pageSize
+}
+
 // 规则：取 max(totalPage, ceil(totalNum/pageSize)) 作为下界，
 // 再钳制到 [1, maxTotalPage]。
 //

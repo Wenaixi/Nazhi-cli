@@ -96,7 +96,7 @@ func (m circleListMode) run(cmd *cobra.Command) {
 		raw, pb, err := m.listLimit(ctx, c, token, key, offset, limit)
 		if err != nil {
 			if len(raw) > 0 {
-				printEnvelope(envelope.Partial(207, m.listFailMsg(err),
+				printEnvelope(envelope.PartialData(m.listFailMsg(err),
 					map[string]any{"records": json.RawMessage(raw), "total": totalOf(pb)}))
 				return
 			}
@@ -114,7 +114,7 @@ func (m circleListMode) run(cmd *cobra.Command) {
 	raw, err := m.listAll(ctx, c, token, key)
 	if err != nil {
 		if len(raw) > 0 {
-			printEnvelope(envelope.Partial(207, m.listFailMsg(err), json.RawMessage(raw)))
+			printEnvelope(envelope.PartialData(m.listFailMsg(err), json.RawMessage(raw)))
 			return
 		}
 		printError(fmt.Errorf("%s", m.listFailMsg(err)))

@@ -134,3 +134,17 @@ func NormalizeIntegerValue(v any) (int64, error) {
 		return 0, fmt.Errorf("期望整数，得到 %T", v)
 	}
 }
+
+// NormalizeIntegerField 是「归一 + 补字段名前缀」的单点适配器。
+//
+// 此前 FlexInt / parseFlexInt / flexStringFromNumber 的 number 分支各自
+// 手写 `NormalizeInteger(raw)` + `fmt.Errorf("%s: %w", field, err)` 样板。
+// 收为本函数后，调用方只声明「字段名」，错误前缀由归一模块单点持有。
+// 语义与 NormalizeInteger 完全一致：键缺失/空串归零、非整值/越界报错。
+func NormalizeIntegerField(raw json.RawMessage, field string) (int64, error) {
+	v, err := NormalizeInteger(raw)
+	if err != nil {
+		return 0, fmt.Errorf("%s: %w", field, err)
+	}
+	return v, nil
+}

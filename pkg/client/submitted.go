@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"math"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -24,19 +23,6 @@ func (c *Client) effectivePageSize() int {
 		return c.submittedPageSize
 	}
 	return defaultSubmittedPageSize
-}
-
-// maxSubmittedCapacityCeiling 返回「钳制页数 × pageSize」这一容量上界，
-// 在乘法会溢出 int 时退回到 math.MaxInt。
-//
-// 调用方以除法形态比较（capacity/maxTotalPage > pageSize）判定越界，
-// 因此本函数只需在乘法安全时给出精确值、溢出时给出一个必然大于任何
-// capacity 的饱和值——后者随即会被下游 maxSubmittedRecords 条数闸拦下。
-func maxSubmittedCapacityCeiling(pageSize int) int {
-	if pageSize > 0 && maxTotalPage > math.MaxInt/pageSize {
-		return math.MaxInt
-	}
-	return maxTotalPage * pageSize
 }
 
 // fetchCirclePage 拉取一页写实记录，同时返回分页信息。
@@ -146,11 +132,11 @@ func (c *Client) fetchAllCirclePages(ctx context.Context, token string, circleTy
 	if capacity/maxTotalPage > pageSize {
 		capacity = maxSubmittedCapacityCeiling(pageSize)
 	}
-	// capacity 双重钳制——先按服务端 totalNum，再按"条数上界"（约 10 万条，
-	// 与 raw_json estimatePagesBudgeted 的字节预算同纪律，防恶意 totalNum 驱动 make 分配 GB 级内存）。
+	// capacity 双重钳制——先按服务端 totalNum，再按"条数上界"（包级常量
+	// maxSubmittedRecords，见 pagination_bounds.go；与 raw_json 字节预算同
+	// 纪律，防恶意 totalNum 驱动 make 分配 GB 级内存）。
 	// 注意：pageSize 是调用方可调大的（WithSubmittedPageSize 10 万），仅页数×pageSize
 	// 的钳制会随 pageSize 膨胀到 1e9 条，条数上界是与其解耦的独立第二道闸。
-	const maxSubmittedRecords = 100_000
 	if capacity > maxSubmittedRecords {
 		slog.Warn("submitted: 记录数超过条数上界，截断到首页", "capacity", capacity, "max", maxSubmittedRecords)
 		return page1, nil

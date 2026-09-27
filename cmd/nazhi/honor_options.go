@@ -1,10 +1,9 @@
 package main
 
 import (
-	"fmt"
+	"context"
 
-	"github.com/Wenaixi/nazhi-cli/pkg/envelope"
-	"github.com/Wenaixi/nazhi-cli/pkg/types"
+	"github.com/Wenaixi/nazhi-cli/pkg/client"
 	"github.com/spf13/cobra"
 )
 
@@ -19,21 +18,14 @@ var honorTypeOptionsCmd = &cobra.Command{
 	Example: "  nazhi honor type-options --token eyJhbGciOiJIUzI1NiJ9.xxx",
 	Args:    cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
-		c, token, err := buildBizClient(cmd)
-		if err != nil {
-			printParamError(err)
-			return
-		}
-		printVerbose("正在获取荣誉类型下拉...")
-		opts, err := c.GetHonorTypeOptions(cmd.Context(), token)
-		if err != nil {
-			printError(fmt.Errorf("获取荣誉类型下拉失败: %w", err))
-			return
-		}
-		if opts == nil {
-			opts = []types.HonorSelectOption{}
-		}
-		printEnvelope(envelope.Success(opts))
+		runReadOp(cmd, readOpMode{
+			verboseMsg:  "正在获取荣誉类型下拉...",
+			errorPrefix: "获取荣誉类型下拉失败",
+			fetch: func(ctx context.Context, c *client.Client, token string) (any, error) {
+				return c.GetHonorTypeOptions(ctx, token)
+			},
+			success: readListSuccess,
+		})
 	},
 }
 
@@ -48,21 +40,14 @@ var honorLevelOptionsCmd = &cobra.Command{
 	Example: "  nazhi honor level-options --token eyJhbGciOiJIUzI1NiJ9.xxx",
 	Args:    cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
-		c, token, err := buildBizClient(cmd)
-		if err != nil {
-			printParamError(err)
-			return
-		}
-		printVerbose("正在获取通用荣誉等级下拉...")
-		opts, err := c.GetHonorTypeForSelect(cmd.Context(), token)
-		if err != nil {
-			printError(fmt.Errorf("获取通用荣誉等级下拉失败: %w", err))
-			return
-		}
-		if opts == nil {
-			opts = []types.HonorSelectOption{}
-		}
-		printEnvelope(envelope.Success(opts))
+		runReadOp(cmd, readOpMode{
+			verboseMsg:  "正在获取通用荣誉等级下拉...",
+			errorPrefix: "获取通用荣誉等级下拉失败",
+			fetch: func(ctx context.Context, c *client.Client, token string) (any, error) {
+				return c.GetHonorTypeForSelect(ctx, token)
+			},
+			success: readListSuccess,
+		})
 	},
 }
 

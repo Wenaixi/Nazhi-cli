@@ -313,3 +313,21 @@ func TestNormalizeTaskInputJSON_Exhaustive_BigIntAndOverflow(t *testing.T) {
 		t.Fatal("fractional big should reject")
 	}
 }
+
+// TestTaskInputNumericCodeDivergenceFromFlexnum 锚定 CLI 与 flexnum 的合法
+// 集合差异是**有意设计**（见 normalizeTaskInputNumericCode 注释）：CLI 输入
+// 边界接受 2^63+ 的大整数数字代码（转字符串码无害），flexnum（SDK 结构化
+// 解码）拒绝 2^63 以上（防 int64 溢出回绕）。若未来统一口径，本测试应删除
+// 并同步 normalizeTaskInputNumericCode 注释。
+func TestTaskInputNumericCodeDivergenceFromFlexnum(t *testing.T) {
+	// CLI：接受 2^63（9223372036854775808）
+	payload := []byte(`{"taskId":1,"content":"c","level":9223372036854775808}`)
+	var in types.TaskSubmitInput
+	if err := decodeTaskInputJSON(payload, &in); err != nil {
+		t.Fatalf("CLI 应接受 2^63（差异有意），实际 %v", err)
+	}
+	// flexnum：拒绝 2^63
+	if _, err := types.NormalizeInteger(json.RawMessage(`9223372036854775808`)); err == nil {
+		t.Fatal("flexnum 应拒绝 2^63（差异有意）")
+	}
+}

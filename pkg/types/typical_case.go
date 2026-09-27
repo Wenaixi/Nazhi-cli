@@ -58,9 +58,9 @@ func flexStringFromNumber(raw json.RawMessage, field string) (string, bool, erro
 		}
 		return strings.TrimSpace(s), true, nil
 	}
-	v, err := NormalizeInteger(data)
+	v, err := NormalizeIntegerField(data, field)
 	if err != nil {
-		return "", false, fmt.Errorf("%s: %w", field, err)
+		return "", false, err
 	}
 	return strconv.FormatInt(v, 10), true, nil
 }
@@ -95,32 +95,20 @@ func (p *AddTypicalCasePayload) UnmarshalJSON(data []byte) error {
 	} else if ok {
 		p.Level = v
 	}
-	id := bytes.TrimSpace(raw.AttachmentID)
-	if len(id) == 0 {
+	// attachmentId 归一收口到 flexnum 唯一入口：空串/null/数字/字符串数字
+	// 统一由 NormalizeInteger 判定（空→0、数字→原值、非整值→报错），
+	// 前端实证（classiccanter.vue）attachmentId 只有 ''（表单初始）或 number
+	// （上传后 returnData.id）两种形态。
+	// 键缺失（RawMessage 为 nil）不清零：保留调用方预设值——入口层边界
+	// 「键缺失 ≠ null」语义由本判定承载，不并入归一模块。
+	if raw.AttachmentID == nil {
 		return nil
 	}
-	if bytes.Equal(id, []byte("null")) || bytes.Equal(id, []byte(`""`)) {
-		p.AttachmentID = 0
-		return nil
-	}
-	if id[0] == '"' {
-		var s string
-		if err := json.Unmarshal(id, &s); err != nil {
-			return fmt.Errorf("attachmentId: %w", err)
-		}
-		if strings.TrimSpace(s) == "" {
-			return nil
-		}
-		n, err := strconv.ParseInt(strings.TrimSpace(s), 10, 64)
-		if err != nil {
-			return fmt.Errorf("attachmentId: %w", err)
-		}
-		p.AttachmentID = n
-		return nil
-	}
-	if err := json.Unmarshal(id, &p.AttachmentID); err != nil {
+	id, err := NormalizeInteger(raw.AttachmentID)
+	if err != nil {
 		return fmt.Errorf("attachmentId: %w", err)
 	}
+	p.AttachmentID = id
 	return nil
 }
 

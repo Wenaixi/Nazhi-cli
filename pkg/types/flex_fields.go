@@ -5,6 +5,23 @@ import (
 	"fmt"
 )
 
+// normalizeHoursField 是 hours 字段的 number/string 双类型兼容统一实现。
+//
+// Task / TaskCircleTypeInfo / CircleRecord 三个类型的 hours 字段此前各自
+// 内联同一段 alias + Hours RawMessage + FlexFloat 委派骨架（仅类型名与
+// 错误前缀不同）。收为本 helper 后，三处各一行调用；新增带 hours 的
+// 类型无需再抄第三份。
+func normalizeHoursField(raw json.RawMessage, name string) (float64, error) {
+	if raw == nil {
+		return 0, nil
+	}
+	var value FlexFloat
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return 0, fmt.Errorf("%s.hours: %w", name, err)
+	}
+	return value.Float64(), nil
+}
+
 // UnmarshalJSON 为 Task 的 hours 提供 number/string 双类型兼容，同时保持公开字段为 float64。
 func (t *Task) UnmarshalJSON(data []byte) error {
 	type taskAlias Task
@@ -15,13 +32,11 @@ func (t *Task) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, &aux); err != nil {
 		return err
 	}
-	if aux.Hours != nil {
-		var value FlexFloat
-		if err := json.Unmarshal(aux.Hours, &value); err != nil {
-			return fmt.Errorf("Task.hours: %w", err)
-		}
-		t.Hours = value.Float64()
+	hours, err := normalizeHoursField(aux.Hours, "Task")
+	if err != nil {
+		return err
 	}
+	t.Hours = hours
 	return nil
 }
 
@@ -35,13 +50,11 @@ func (t *TaskCircleTypeInfo) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, &aux); err != nil {
 		return err
 	}
-	if aux.Hours != nil {
-		var value FlexFloat
-		if err := json.Unmarshal(aux.Hours, &value); err != nil {
-			return fmt.Errorf("TaskCircleTypeInfo.hours: %w", err)
-		}
-		t.Hours = value.Float64()
+	hours, err := normalizeHoursField(aux.Hours, "TaskCircleTypeInfo")
+	if err != nil {
+		return err
 	}
+	t.Hours = hours
 	return nil
 }
 
@@ -55,12 +68,10 @@ func (c *CircleRecord) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, &aux); err != nil {
 		return err
 	}
-	if aux.Hours != nil {
-		var value FlexFloat
-		if err := json.Unmarshal(aux.Hours, &value); err != nil {
-			return fmt.Errorf("CircleRecord.hours: %w", err)
-		}
-		c.Hours = value.Float64()
+	hours, err := normalizeHoursField(aux.Hours, "CircleRecord")
+	if err != nil {
+		return err
 	}
+	c.Hours = hours
 	return nil
 }

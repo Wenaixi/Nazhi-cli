@@ -34,12 +34,11 @@ var sessionActivateCmd = &cobra.Command{
 		printVerbose("激活 Session...")
 		raw, err := c.ActivateSessionJSON(cmd.Context(), token)
 		if err != nil {
+			// 空数据（ErrEmptyUserInfo）与其它错误统一走 printSessionActivateError：
+			// 空 → Empty("get_my_info_empty")，与 whoami 同一 reason 文案；
+			// 其余 → 按哨兵映射。ActivateSessionJSON 透传哨兵后，
+			// len(raw)==0 分支不再可达（数据为空必带 ErrEmptyUserInfo）。
 			printSessionActivateError(err)
-			return
-		}
-
-		if len(raw) == 0 {
-			printEnvelope(envelope.Empty("get_my_info_nil"))
 			return
 		}
 
@@ -57,7 +56,7 @@ var sessionActivateCmd = &cobra.Command{
 func printSessionActivateError(err error) {
 	switch {
 	case errors.Is(err, client.ErrSessionBackoff):
-		printEnvelope(envelope.Partial(429, "session 激活冷却中，上次激活失败请稍后重试", nil))
+		printEnvelope(envelope.Pulse("session 激活冷却中，上次激活失败请稍后重试"))
 	case errors.Is(err, client.ErrEmptyUserInfo):
 		printEnvelope(envelope.Empty("get_my_info_empty"))
 	default:

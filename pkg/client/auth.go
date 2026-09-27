@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -185,19 +184,12 @@ func (c *Client) Login(ctx context.Context, req types.LoginRequest) (*types.Logi
 
 	// 契约：Login validate 端点响应体同样封顶 maxResponseBodySize（4MiB）。
 	// 与 request.go doBizGet/httpDo 同构——防异常/被劫持 SSO 塞超大 body 造成内存放大。
-	// 302 分支不读 body（只取 Location 头），仅 200 与其它状态码分支受影响。
-	bodyBytes, err := io.ReadAll(io.LimitReader(httpResp.Body, maxResponseBodySize+1))
+	// 完整档限读与超限 Close 由 readBodyCapped 统一承载（哨兵 ErrLoginRejected，
+	// 认证失败与业务未处理实体不同义）。302 分支不读 body（只取 Location 头）。
+	bodyBytes, err := readBodyCapped(httpResp, ErrLoginRejected)
 	if err != nil {
-		return nil, fmt.Errorf("Login 读取响应体失败: status=%d read=%d bytes: %w",
-			httpResp.StatusCode, len(bodyBytes), err)
-	}
-	if len(bodyBytes) > maxResponseBodySize {
-		// 超限分支直 Close 放弃 keep-alive，与 httpDo / doBizGet / 上传成功体
-		// 同纪律：不 Close 则 defer drainAndClose 会 io.Copy 无上限续读剩余
-		// body。变异验证实测：移除本行后客户端与无限流服务端僵持、测试
-		// 300 秒超时（无上限 drain 时服务端续写 264MB 直到 EOF）。
-		_ = httpResp.Body.Close()
-		return nil, fmt.Errorf("%w: Login 响应体超过 %d 字节上限", ErrLoginRejected, maxResponseBodySize)
+		return nil, fmt.Errorf("Login 读取响应体失败: status=%d: %w",
+			httpResp.StatusCode, err)
 	}
 	bodySnippet := logx.RedactSnippet(bodyBytes)
 

@@ -20,7 +20,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -32,21 +31,9 @@ import (
 
 // rawListBytes 返回 dataList 的原始字节。dataList 缺失时返回 nil。
 // 返回 []byte 而非 RawMessage 让 bytes.Buffer 直接 append，避免反复拷贝。
-// maxTotalPage 翻页上界钳制——TotalPage 来自服务端单字段声明，
-// 恶意/异常值直接驱动 make 分配会导致单请求 OOM。10000 页 × pageSize=500 ≈ 500 万条，
-// 远超任何真实业务数据量。
-const maxTotalPage = 10000
-
-// maxAssembleBuffer assembleCirclesJSON 预分配容量上界（CC1 修复）——
-// len(raw1)×totalPage 可达 4MB×10000=40GB 单次 make，攻陷服务端可借首页大响应
-// + 虚高 totalNum 驱动单请求 OOM。64MB 足够覆盖任何真实拼接输出。
-const maxAssembleBuffer = 64 << 20
-
-// maxFetchTasksDims 任务维度数上界——维度数直接来自
-// getDimensions 服务端声明，恶意值驱动全维度并发拉取 × 单页 4MB（maxResponseBodySize）
-// 累积无预算。128 维远超任何真实学校维度集（通常 <10）。FetchTasksJSON 与
-// FetchTasks 两条取数路径共用同一道钳制（后者在 task.go 截断）。
-const maxFetchTasksDims = 128
+// 内存安全四道闸的上限常量集中在 pagination_bounds.go（页数/字节/条数/维度），
+// 本文件只消费，不再各自定义。字节闸配套纯函数（estimatePagesBudgeted /
+// capAssembledSlice / budgetTruncatePage）见本文件下方。
 
 // capAssembledSlice 对已累积的 rawResult 切片做总量预算截断。
 // getCirclesJSON/getCirclesLimitJSON 翻页时把每页原始字节累积进 results，
@@ -591,19 +578,11 @@ func (c *Client) FetchTasksJSON(ctx context.Context, token string) (json.RawMess
 	}
 
 	if gErr != nil {
-		err := gErr
-		if isContextError(err) {
+		if isContextError(gErr) {
 			merged, n := assemble()
-			if n > 0 {
-				// partial + cancel：双包 ErrBusinessRejected + ErrRetryable
-				return merged, fmt.Errorf("%w: FetchTasksJSON context 取消后部分维度成功: %w",
-					ErrBusinessRejected,
-					fmt.Errorf("%w: %w", ErrRetryable, err))
-			}
-			// 全 cancel：裸 ErrRetryable
-			return nil, fmt.Errorf("%w: FetchTasksJSON 全部维度因 context 取消失败: %w", ErrRetryable, err)
+			return merged, partialTasksOutcome(n > 0, nil, nil, 0, "FetchTasksJSON", gErr)
 		}
-		return nil, fmt.Errorf("FetchTasksJSON 并发拉取失败: %w", err)
+		return nil, fmt.Errorf("FetchTasksJSON 并发拉取失败: %w", gErr)
 	}
 
 	merged, totalPages := assemble()
@@ -612,50 +591,30 @@ func (c *Client) FetchTasksJSON(ctx context.Context, token string) (json.RawMess
 		if len(dimErrs) > 0 {
 			// 错误分类与结构化路径共用同一口径（classifyDimErrors），
 			// 不再在本路径手写第二份判定循环。
-			bizErrs, _, cancelledCount := classifyDimErrors(dimErrs)
-			if len(bizErrs) == 0 && cancelledCount > 0 {
-				return nil, fmt.Errorf("%w: FetchTasksJSON 全部维度因 context 取消失败: %w",
-					ErrRetryable, errors.Join(dimErrs...))
-			}
-			return nil, fmt.Errorf("%w: FetchTasksJSON 全部维度失败: %w", ErrBusinessRejected, errors.Join(dimErrs...))
+			bizErrs, ctxErrs, cancelledCount := classifyDimErrors(dimErrs)
+			return nil, partialTasksOutcome(false, bizErrs, ctxErrs, cancelledCount, "FetchTasksJSON", nil)
 		}
 		return []byte("[]"), nil
 	}
 
 	if len(dimErrs) > 0 {
 		bizErrs, ctxErrs, cancelledCount := classifyDimErrors(dimErrs)
-		var cancelPlaceholder error
-		if cancelledCount > 0 {
-			cancelPlaceholder = fmt.Errorf("%w: %d 个维度因 context 取消而失败", ErrRetryable, cancelledCount)
-		}
-		if len(bizErrs) == 0 && cancelledCount > 0 {
-			joined := errors.Join(append(ctxErrs, cancelPlaceholder)...)
-			return merged, fmt.Errorf("%w: FetchTasksJSON context 取消后部分维度成功: %w",
-				ErrBusinessRejected, joined)
-		}
-		joined := errors.Join(append(append(bizErrs, ctxErrs...), cancelPlaceholder)...)
-		return merged, fmt.Errorf("%w: FetchTasksJSON %d 个维度失败: %w",
-			ErrBusinessRejected, len(bizErrs), joined)
+		return merged, partialTasksOutcome(true, bizErrs, ctxErrs, cancelledCount, "FetchTasksJSON", nil)
 	}
 	return merged, nil
 }
 
 // fetchTasksDimensionJSON 拉取单个维度的任务 dataList 原始字节。
+// 请求段（httpDo→解析→业务码）由 doBizGetRaw 单点承载；
+// 空 dataList 归一为 [] 与维度上下文错误包装是本调用点知识。
 func (c *Client) fetchTasksDimensionJSON(ctx context.Context, dim types.Dimension, headers map[string]string) ([]byte, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	statURL := c.bizURL("/api/studentCircleNew/getCircleStatistics") + "?dimensionId=" + strconv.FormatInt(dim.ID, 10)
-	bodyBytes, err := c.httpDo(ctx, http.MethodGet, statURL, nil, headers, "")
-	if err != nil {
-		return nil, fmt.Errorf("维度 %d(%s) 请求失败: %w", dim.ID, dim.Name, err)
-	}
-	resp, err := decodeOrInvalidResponse(fmt.Sprintf("维度 %d(%s)", dim.ID, dim.Name), bodyBytes)
+	statURL := "/api/studentCircleNew/getCircleStatistics?dimensionId=" + strconv.FormatInt(dim.ID, 10)
+	resp, err := c.doBizGetRaw(ctx, fmt.Sprintf("维度 %d(%s)", dim.ID, dim.Name), statURL, headers)
 	if err != nil {
 		return nil, err
-	}
-	if err := types.CheckCode(resp); err != nil {
-		return nil, fmt.Errorf("%w: 维度 %d(%s) 业务错误: %w", ErrBusinessRejected, dim.ID, dim.Name, err)
 	}
 	if resp.DataList == nil {
 		return []byte("[]"), nil
@@ -699,15 +658,13 @@ func marshalUserInfoJSON(info *types.UserInfo, caller string) (json.RawMessage, 
 func (c *Client) ActivateSessionJSON(ctx context.Context, token string) (json.RawMessage, error) {
 	info, err := c.GetMyInfo(ctx, token)
 	if err != nil {
-		// GetMyInfo 空数据返回 ErrEmptyUserInfo —— 保持 ActivateSessionJSON 原契约：
-		// 数据为空时返回 (nil, nil)，不向调用方暴露哨兵。
-		if errors.Is(err, ErrEmptyUserInfo) {
-			return nil, nil
-		}
+		// 空数据（ErrEmptyUserInfo）透传，与 GetMyInfoJSON 对齐：CLI 侧
+		// session activate 与 whoami 两条路径统一按 ErrEmptyUserInfo 处理，
+		// 消除「ActivateSessionJSON 吞哨兵 → CLI 死分支」的空语义分裂。
 		return nil, err
 	}
 	if info == nil {
-		return nil, nil
+		return nil, ErrEmptyUserInfo
 	}
 	return marshalUserInfoJSON(info, "ActivateSessionJSON")
 }

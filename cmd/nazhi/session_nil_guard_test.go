@@ -14,6 +14,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"strings"
 	"testing"
 )
 
@@ -105,8 +106,11 @@ func TestSessionActivate_HasNilGuardBeforePrintEnvelope(t *testing.T) {
 		t.Fatal("sessionActivateCmd.Run 未发现 printEnvelope(envelope.Success(...)) 调用")
 	}
 
-	// 3. 找守卫（IfStmt with == nil 或 len() == 0 检查）
-	// 必须在 printEnvPos 之前出现
+	// 3. 找守卫（IfStmt with == nil / len() == 0 / err != nil 检查）
+	// 必须在 printEnvPos 之前出现。
+	// 新契约：ActivateSessionJSON 透传 ErrEmptyUserInfo，空数据必然带
+	// err != nil → 走 printSessionActivateError → Empty，不再输出裸 null。
+	// 守卫须识别 err != nil（IfStmt Cond 是 BinaryExpr NEQ）。
 	var nilGuardPos token.Pos
 	ast.Inspect(runFunc.Body, func(n ast.Node) bool {
 		ifStmt, ok := n.(*ast.IfStmt)
@@ -114,11 +118,21 @@ func TestSessionActivate_HasNilGuardBeforePrintEnvelope(t *testing.T) {
 			return true
 		}
 		be, ok := ifStmt.Cond.(*ast.BinaryExpr)
-		if !ok || be.Op != token.EQL {
+		if !ok {
 			return true
 		}
-		// 兼容：info == nil 或 len(raw) == 0
-		if matched := isNilOrLengthGuard(be); matched {
+		matched := false
+		//nolint:exhaustive // 只关心 EQL/NEQ 两类守卫操作符，其余由 default 兜底。
+		switch be.Op {
+		case token.EQL:
+			matched = isNilOrLengthGuard(be)
+		case token.NEQ:
+			// err != nil 守卫：err 标识符与 nil 比较
+			matched = isErrNilGuard(be)
+		default:
+			// 其它操作符不构成守卫
+		}
+		if matched {
 			if ifStmt.Pos() < printEnvPos {
 				if nilGuardPos == 0 || ifStmt.Pos() > nilGuardPos {
 					nilGuardPos = ifStmt.Pos()
@@ -130,13 +144,23 @@ func TestSessionActivate_HasNilGuardBeforePrintEnvelope(t *testing.T) {
 
 	if nilGuardPos == 0 {
 		printEnvLine := fset.Position(printEnvPos).Line
-		t.Errorf("守卫缺失：sessionActivateCmd.Run 在 printEnvelope(envelope.Success(...)) (line %d) 之前必须有 nil/空守卫。\n"+
+		t.Errorf("守卫缺失：sessionActivateCmd.Run 在 printEnvelope(envelope.Success(...)) (line %d) 之前必须有 nil/空/err 守卫。\n"+
 			"future regression：如果 SDK 回归到返回 (nil, nil)，cmd 层会输出裸 null。",
 			printEnvLine)
 		return
 	}
-	t.Logf("✓ 修复锚定：nil/空守卫在 line %d，printEnvelope 在 line %d",
+	t.Logf("✓ 修复锚定：nil/空/err 守卫在 line %d，printEnvelope 在 line %d",
 		fset.Position(nilGuardPos).Line, fset.Position(printEnvPos).Line)
+}
+
+// isErrNilGuard 判断 BinaryExpr 是否为 err != nil 守卫（任意 err 相关标识符）。
+func isErrNilGuard(be *ast.BinaryExpr) bool {
+	if ident, ok := be.X.(*ast.Ident); ok {
+		if y, ok := be.Y.(*ast.Ident); ok && y.Name == "nil" && strings.HasSuffix(ident.Name, "err") {
+			return true
+		}
+	}
+	return false
 }
 
 // isNilOrLengthGuard 判断 BinaryExpr 是否为 info == nil 或 len(x) == 0 守卫。

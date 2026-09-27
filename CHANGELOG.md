@@ -2,7 +2,32 @@
 
 ## [Unreleased]
 
-本轮由第三轮架构深化扫描驱动（`improve-codebase-architecture`）。六个候选经**对抗式核实**（默认判否、逐条找反证）后**只落地两处**，其余四处经证据否决并记入 CLAUDE.md「已证伪误报」节。**两处均改变用户可见行为**：非法 `--status` 由静默返回空列表改为参数错误。
+本轮由第四轮架构深化扫描驱动（`improve-codebase-architecture`，全模块全细节）。**16 个候选全部经深度核实后落地**：消除跨文件重复实现、把散落知识收为单点、语义化接口，并统一两条路径的行为。**用户可见行为变更**：`ActivateSessionJSON` 空数据从返回 `(nil, nil)` 改为透传 `ErrEmptyUserInfo`（CLI `session activate` 与 `whoami` 的空响应文案统一为 `get_my_info_empty`）；`envelope` 新增 `PartialData`（207）/`Pulse`（429）构造器；`TaskInput` 接口收缩但具体类型保留薄壳 Getter 零破坏。
+
+### 架构深化（第四轮，16 项）
+
+- **限读纪律收为两档 helper**（`pkg/client/request.go`）：新增 `readBodyCapped`（完整档，哨兵由调用点传入）与 `readErrorSnippet`（错误档，64KB + 超限 Close）。此前错误体三行在 httpDo/doBizGet/doGetMenu/上传/下载五处重复，且 64KB 档内部两副面孔（doGetMenu 有 +1 探限+Close、file.go 两处无 Close 也无说明）——后者正是 Login 修复前「drain 无上限续读」的同形态。现错误档成单一形态，完整档四处收口。
+- **业务 GET 管线单点化**（`pkg/client/request.go` 的 `doBizGetRaw`）：getMyInfoRaw（自定义 Referer /modify + 双解码器 + postProcessUserInfo 钩子）与两条任务维度管线此前各自手写「请求→解析→业务码」段，现统一经 `doBizGetRaw(ctx, opName, path, headers)`（不预热，锁内安全）；错误包装差异（维度上下文、空归 []）保留在调用点。
+- **任务维度 partial 决策单点化**（`partialTasksOutcome` 纯函数）：FetchTasks 与 FetchTasksJSON 各约 40-50 行的 partial 决策表镜像（取消占位/仅取消分支/全失败/部分失败双包装）收为一处定义与测试；维度钳制统一经 `collectDimsOpts.maxDims` 声明（FetchTasks 删除手工截断段）。
+- **读命令族收编至 11 命令**（`cmd/nazhi/read_op_runner.go`）：task dimensions/circle-type、honor types/levels/type-options/level-options、self-eval grad-status 共 7 个此前手写七步骨架的命令收编 `runReadOp`，消除各自手抄的 nil 归一兜底（`if x==nil { x=[]T{} }`）。
+- **flag 校验派豁免升级为一类命令**（CLAUDE.md D 节）：circle comment/like/delete 与 typical-case delete/delete-batch、honor delete 统一归入 flag 校验派（`--id` 必填→ParseInt→正数→建客户端→调 SDK→envelope），发明 runner 是接口≈实现的新浅层，豁免按类别判定不再枚举命令。
+- **TaskInput 接口收缩为 7 方法**（`pkg/types/task.go`）：新增 `ActivityFields` 聚合（24 活动字段，非 wire 类型）与 `GetActivityFields()`，29 个 Getter 回声收敛；具体类型保留 deprecated 薄壳 Getter（外部 `input.GetName()` 仍编译通过，公开 SDK 零破坏）+ 新增 `SetAddressLevel` 供 CLI flag 覆盖。
+- **envelope 部分完成语义化**（`pkg/envelope/envelope.go`）：`PartialData`（207）/`Pulse`（429）替代泛型 `Partial`（保留 deprecated）；circle_list_mode/task_list 的 207 字面量与 session 冷却的 429 不再共用外观相同构造器。
+- **空语义分裂消除**（`pkg/client/raw_json.go` + `cmd/nazhi/session.go`）：ActivateSessionJSON 透传 `ErrEmptyUserInfo`（对齐 GetMyInfoJSON），session activate 的不可达 `ErrEmptyUserInfo` 分支与 `len(raw)==0 → get_my_info_nil` 死路径删除，两条 CLI 路径统一 `get_my_info_empty`。
+- **recoverx 输出可注入**（`internal/recoverx`）：新增 `SetPanicWriter`，panic 摘要/stack 默认 os.Stderr、测试/宿主可注入 buffer，stderr 纪律扩展到 internal 层；`SetQuiet` 保留（pkg/client 无法感知 CLI flag 是真实跨层依赖）。
+- **CLI 与 flexnum 数值差异显式锚定**（`cmd/nazhi/task_payload_json.go`）：big.Rat 判定提为具名 `normalizeTaskInputNumericCode` 并声明「与 flexnum 的合法集合差异是有意设计」，`TestTaskInputNumericCodeDivergenceFromFlexnum` 锁定（CLI 接受 2^63+、flexnum 拒绝）。
+- **典型案例 attachmentId 收口 flexnum**（`pkg/types/typical_case.go`）：手写 `strconv.ParseInt` 分支改经 `NormalizeInteger`；键缺失不清零语义保留在调用点。
+- **宽松类型族收口归一**（`pkg/types/flexjson.go`）：PlayRoleCode number 分支改经 `NormalizeInteger`、IntList 字符串元素改经 `NormalizeIntegerText`；`flex_fields.go` 三份 hours UnmarshalJSON 骨架收敛为 `normalizeHoursField` 单点。
+- **归一补前缀适配器**（`pkg/types/flexnum.go` 的 `NormalizeIntegerField`）：FlexInt/flexStringFromNumber 的「归一 + 补字段前缀」样板收为单点；firstInt64/honorMapInt64 保持薄适配器（一行归 + 一行失败处理，再收是过度抽象）。
+- **翻页四道闸集中**（`pkg/client/pagination_bounds.go`）：四个上限常量（页数/字节/条数/维度）+ `maxSubmittedCapacityCeiling` 收为单点；`maxSubmittedRecords` 从 fetchAllCirclePages 内联局部提升为包级具名闸。
+- **writeOpMode applyFlags 泛型收敛**（`cmd/nazhi/write_op_runner.go`）：task 四个分支的逐字重复闭包收为 `taskApplyAddressLevelFlags[T]` 一行委托（约束经 `SetAddressLevel` 接口方法）。
+- **stdin 读取单点化**（`cmd/nazhi/self_eval_submit.go` 的 `readCommentFromFlagOrStdin`）：self-eval submit 与 grad-submit 的「空或 - → 终端检测 → prompt → 超时读取」块收敛为单点，60 秒超时提为 `stdinTimeoutSec` 常量；判空参数错误留在调用点。
+
+### 测试
+
+- `TestTaskInputNumericCodeDivergenceFromFlexnum`（CLI/flexnum 差异锚定）；`session_nil_guard_test.go` 守卫更新为识别 `err != nil`（新空语义契约）；`cmd/nazhi/session_nil_guard_test.go` 的 AST 扫描 switch 补 `nolint:exhaustive`（只关心 EQL/NEQ 两类守卫操作符）。全部新增/更新测试经变异验证或行为矩阵确认，非恒绿。
+
+第三轮（历史）：
 
 ### 修复
 

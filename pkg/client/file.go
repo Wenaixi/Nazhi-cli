@@ -212,29 +212,20 @@ func (c *Client) UploadFile(ctx context.Context, filePath string) (*types.Upload
 	}
 	defer drainAndClose(resp.Body)
 
-	// 先判 status code 再读 body。非 200 时只读 64KB 用于错误消息，
+	// 先判 status code 再读 body。非 200 时错误档限读由 readErrorSnippet
+	// 统一承载（64KB + 超限 Close），哨兵由 classifyHTTPStatus 给出——
 	// 避免大 HTTP 错误响应的 body 全部读入内存（服务端 502/503 有时带完整 HTML 堆栈）。
 	if resp.StatusCode != http.StatusOK {
-		errBody, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBodySize))
-		// 复用 request.go 的 classifyHTTPStatus 统一 sentinel 分类。
-		sentinel := classifyHTTPStatus(resp.StatusCode, ErrUploadRejected)
+		errBody, sentinel := readErrorSnippet(resp, ErrUploadRejected)
 		return nil, fmt.Errorf("%w: status=%d body=%s", sentinel, resp.StatusCode, logx.RedactSnippet(errBody))
 	}
 
-	// 上传成功路径响应体同样封顶 maxResponseBodySize（4MiB，对齐 request.go 的双守卫）。
+	// 上传成功路径响应体同样封顶 maxResponseBodySize（4MiB，对齐 request.go 的双档纪律）。
 	// 正常上传响应为几百字节 JSON（HAR 实证），超限仅防异常/被劫持服务端内存放大。
-	bodyBytes, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBodySize+1))
+	// 完整档限读与超限 Close 由 readBodyCapped 统一承载。
+	bodyBytes, err := readBodyCapped(resp, ErrInvalidResponse)
 	if err != nil {
-		// 读取失败时包装为 ErrNetwork 哨兵，供 errors.Is 识别；
-		// 不吞错误避免后续解码报误导性 EOF。
-		return nil, fmt.Errorf("%w: 读取上传响应体失败: %w", ErrNetwork, err)
-	}
-	if len(bodyBytes) > maxResponseBodySize {
-		// 超限分支直 Close 放弃 keep-alive，不再经 defer drainAndClose
-		// 无上限续读剩余 body——与 httpDo 的超限分支同纪律。
-		// 恶意无限流下旧实现会 drain 到 newCleanClient 超时（主 Client 无超时兜底 5 分钟）。
-		_ = resp.Body.Close()
-		return nil, fmt.Errorf("%w: 上传响应体超过 %d 字节上限", ErrInvalidResponse, maxResponseBodySize)
+		return nil, fmt.Errorf("%w: 读取上传响应体失败: %w", ErrInvalidResponse, err)
 	}
 
 	// 5. 解析响应。200+非 JSON（WAF 挑战页/维护页 HTML）与主管线同口径归 ErrInvalidResponse，
@@ -382,10 +373,10 @@ func (c *Client) DownloadFile(ctx context.Context, attachmentID int64, dst strin
 	}
 	defer drainAndClose(resp.Body)
 
-	// 4. 状态码分类
+	// 4. 状态码分类。非 2xx 时错误档限读由 readErrorSnippet 统一承载
+	//    （64KB + 超限 Close），哨兵由 classifyHTTPStatus 给出。
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		errBody, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBodySize))
-		sentinel := classifyHTTPStatus(resp.StatusCode, ErrInvalidResponse)
+		errBody, sentinel := readErrorSnippet(resp, ErrInvalidResponse)
 		return fmt.Errorf("%w: status=%d body=%s", sentinel, resp.StatusCode, logx.RedactSnippet(errBody))
 	}
 

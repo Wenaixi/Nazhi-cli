@@ -42,7 +42,7 @@ var taskListCmd = &cobra.Command{
 				errors.Is(err, context.Canceled) ||
 				errors.Is(err, context.DeadlineExceeded)
 			if isPartialErr && len(tasks) > 0 {
-				printEnvelope(envelope.Partial(207, "fetch_tasks_partial_failure: "+err.Error(), tasks))
+				printEnvelope(envelope.PartialData("fetch_tasks_partial_failure: "+err.Error(), tasks))
 				return
 			}
 			printError(fmt.Errorf("获取任务列表失败: %w", err))

@@ -305,6 +305,32 @@ func doBizGetDecode[T any](c *Client, ctx context.Context, token, opName, path s
 	)
 }
 
+// doBizGetRaw 是业务 GET 的「请求 → 解析 → 业务码」段单点。
+//
+// 主管线 doBizAndDecode 内联了「预热 → httpDo → DecodeResponse → CheckCode」，
+// 而 getMyInfoRaw（激活链步骤 4，锁内不能预热）与两条任务维度管线
+// （fetchTasksForDimension / fetchTasksDimensionJSON）此前各自手写同一段，
+// 每次改 CheckCode 哨兵包装或日志行为要同步 3-4 个文件。本函数把这段收为
+// 单点：不预热（调用方承诺已完成激活，锁内路径避免重入死锁）、不解码
+// （解码器链与空语义是调用点知识，见 doBizGetDecode 的 decoders 参数）。
+// （ErrInvalidResponse / ErrBusinessRejected）。
+// token 不单独传参：业务请求头（含 X-Auth-Token）由调用方经 headers 提供，
+// 本函数不预热 session，也不自行组装业务头。
+func (c *Client) doBizGetRaw(ctx context.Context, opName, path string, headers map[string]string) (*types.UnifiedResponse, error) {
+	bodyBytes, err := c.httpDo(ctx, http.MethodGet, c.bizURL(path), nil, headers, "")
+	if err != nil {
+		return nil, fmt.Errorf("%s 请求失败: %w", opName, err)
+	}
+	resp, err := decodeOrInvalidResponse(opName, bodyBytes)
+	if err != nil {
+		return nil, err
+	}
+	if err := types.CheckCode(resp); err != nil {
+		return nil, errors.Join(ErrBusinessRejected, fmt.Errorf("%s失败: %w", opName, err))
+	}
+	return &resp, nil
+}
+
 // logRequestHeaders 在 debug 级别输出请求头，敏感 header 自动脱敏。
 func (c *Client) logRequestHeaders(ctx context.Context, req *http.Request) {
 	if c.logger == nil {
@@ -374,19 +400,12 @@ func (c *Client) httpDo(ctx context.Context, method, url string, body any, heade
 	defer drainAndClose(resp.Body)
 
 	// 响应体读取封顶 maxResponseBodySize（4MiB），防异常/被劫持服务端塞超大
-	// body 造成内存放大。注释须与本文件常量同源，不要写死数值——此处曾长期
-	// 写「1MB」而常量已是 4<<20，与下方记录的上调原因自相矛盾。
-	// 与 file.go 错误体限读 64KB 的既有纪律对齐；正常平台响应 <1KB（见本文件头部注释）。
-	// io.LimitReader 读满上限即返回 EOF 错误——此时 body 已超限，归 ErrInvalidResponse（非网络故障）。
-	respBytes, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBodySize+1))
+	// body 造成内存放大。注释须与常量同源，不要写死数值——此处曾长期
+	// 写「1MB」而常量已是 4<<20。完整档限读与超限 Close 由 readBodyCapped
+	// 统一承载（httpDo/doBizGet/Login/上传成功体共用）。
+	respBytes, err := readBodyCapped(resp, ErrInvalidResponse)
 	if err != nil {
-		return nil, fmt.Errorf("%w: 读取响应体失败: %w", ErrNetwork, err)
-	}
-	if len(respBytes) > maxResponseBodySize {
-		// 超限分支直 Close 放弃 keep-alive，不再经 defer drainAndClose 无上限
-		// 消费剩余 body——恶意无限流下旧实现会持续读到 c.http.Timeout 才被总超时兜底。
-		_ = resp.Body.Close()
-		return nil, fmt.Errorf("%w: 响应体超过 %d 字节上限", ErrInvalidResponse, maxResponseBodySize)
+		return nil, err
 	}
 
 	// 先判级别再求值。logx.RedactBodyThenTruncate 对 4MB 响应体会
@@ -424,27 +443,73 @@ const maxResponseBodySize = 4 << 20
 // 不限读，同一口径三处表达不一。
 const maxErrorBodySize = 64 << 10
 
-// 限读纪律按「body 用途」分两档，上限各自单点持有，不抽公共 helper。
+// 限读纪律按「body 用途」分两档，各自由统一 helper 承载（见 readBodyCapped /
+// readErrorSnippet），上限与关闭语义单点持有：
 //
-// 分档依据是读到的字节要做什么，这是两类出口唯一实质差别：
-//   - 需要完整 body 参与后续解码（httpDo / doBizGet / Login validate 的
-//     200 分支 / 上传成功体）：上限 maxResponseBodySize，超限归
-//     ErrInvalidResponse（Login 例外，归 ErrLoginRejected——认证失败
-//     与业务未处理实体不同义），并直 Close 放弃 keep-alive。
-//   - 读到的字节仅用于错误文案里的脱敏摘要（file.go 上传/下载错误体 /
-//     session.go doGetMenu 的状态码错误体）：上限 maxErrorBodySize，
-//     不做 +1 探测（无需判定超限），哨兵由 classifyHTTPStatus 给出。
+//   - 完整档（需要完整 body 参与后续解码）：readBodyCapped。上限
+//     maxResponseBodySize，超限归哨兵（httpDo/doBizGet 归 ErrInvalidResponse，
+//     Login 例外归 ErrLoginRejected——认证失败与业务未处理实体不同义），
+//     并直 Close 放弃 keep-alive。
+//   - 错误档（读到的字节仅用于错误文案里的脱敏摘要）：readErrorSnippet。
+//     上限 maxErrorBodySize，+1 探限判定超限并直 Close——错误档同样面临
+//     恶意无限流，不 Close 会让 defer drainAndClose 无上限续读剩余 body。
+//     哨兵由 classifyHTTPStatus 给出，摘要由 logx.RedactSnippet 单点持有。
 //
-// 不抽 helper 的理由：若统一签名只能是 readBody(r, cap, sentinel, closeOnOverflow)
-// 这类带多个分支参数的形式，比各调用点直写三行更难读，且两档的语义差别
-// 不是布尔开关而是「body 用途」——那属于调用点的知识，不该被参数化。
-// 真正跨调用点共享的是**上限数值**（已各自提为常量）与「先脱敏后截断」
-// 的摘要次序（由 logx.RedactSnippet 单点持有）。
+// 两档的差别是「body 用途」（完整解码 vs 错误摘要），由调用点选择 helper
+// 表达，不再参数化。历史教训：旧注释以「不抽 helper」为理由让错误档三行
+// 散落四处、形态不一（file.go 两处无 +1 探限无 Close、doGetMenu 有 +1 有
+// Close），正是 Login 修复前续读风险的同形态；常量与注释随之漂移（1MB→
+// 4MiB 事故、doGetMenu 曾被描述为限 100 字节而实现完全不限读）。故各处
+// 注释一律引用常量名与 helper 名而非写死数值。
+
+// readBodyCapped 是「需要完整 body 参与后续解码」这一用途的统一限读出口。
 //
-// 分散的代价是注释与常量漂移，历史上确实发生过（本文件下方事故记录
-// 写着「1MB 上调到 4MiB」而 httpDo 注释长期仍写「封顶 1MB」；doGetMenu
-// 曾被注释描述为「限 100 字节」而实现完全不限读）。故各处注释一律引用
-// 常量名而非写死数值。
+// 语义（与限读纪律注释一致）：上限 maxResponseBodySize，读满上限即判定超限，
+// 超限时直 Close 放弃 keep-alive（不再经调用方 defer drainAndClose 无上限续读
+// 剩余 body），并返回哨兵包装错误。哨兵由调用方传入（httpDo/doBizGet 归
+// ErrInvalidResponse；Login 200 分支归 ErrLoginRejected——认证失败与业务未处理
+// 实体不同义）。
+//
+// 调用方拿到返回的 []byte 后 body 已关闭，可放心继续解码。
+//
+// 历史：此前的超限三行（LimitReader+1 → 判长 → Close）在 httpDo / doBizGet /
+// Login validate / 上传成功体四处各写一遍，注释与常量随之漂移（1MB→4MiB
+// 事故、Login 超限漏 Close 变异验证 300s 超时）。收为单点后，完整档出口
+// 只声明「哨兵是什么」，限读与关闭语义不再重复。
+func readBodyCapped(resp *http.Response, sentinel error) ([]byte, error) {
+	bodyBytes, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBodySize+1))
+	if err != nil {
+		// 携带已读字节数：连接被重置 / content-length 不符时，调用方
+		// 能区分「读到一半断了」与「根本读不到」（Login 测试守护此诊断）。
+		return nil, fmt.Errorf("%w: 读取响应体失败: read=%d bytes: %w", ErrNetwork, len(bodyBytes), err)
+	}
+	if len(bodyBytes) > maxResponseBodySize {
+		// 超限分支直 Close 放弃 keep-alive，不再经调用方 defer drainAndClose
+		// 无上限续读剩余 body——恶意无限流下旧实现会持续读到超时兜底。
+		_ = resp.Body.Close()
+		return nil, fmt.Errorf("%w: 响应体超过 %d 字节上限", sentinel, maxResponseBodySize)
+	}
+	return bodyBytes, nil
+}
+
+// readErrorSnippet 是「只为构造错误消息而读响应体」这一用途的统一限读出口。
+//
+// 语义（与限读纪律注释一致）：上限 maxErrorBodySize，+1 探限判定超限并直
+// Close 放弃 keep-alive——错误档同样面临恶意无限流，不 Close 会让调用方
+// defer drainAndClose 无上限续读剩余 body（与 Login 修复前同形态）。哨兵由
+// classifyHTTPStatus 给出，摘要由 logx.RedactSnippet 单点持有。
+//
+// 历史：此前的错误体三行（LimitReader → 判长 → Close）在 file.go 上传/下载
+// 错误体、session.go doGetMenu 状态码错误体、auth.go Login 非 200 分支
+// 各处形态不一（file.go 两处无 +1 探限、无 Close，doGetMenu 有 +1 有 Close）。
+// 收为单点后，错误档出口只有一处形态。
+func readErrorSnippet(resp *http.Response, defaultSentinel error) ([]byte, error) {
+	errBody, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBodySize+1))
+	if len(errBody) > maxErrorBodySize {
+		_ = resp.Body.Close()
+	}
+	return errBody, classifyHTTPStatus(resp.StatusCode, defaultSentinel)
+}
 
 // rawDoWithResp 执行请求并返回 *http.Response（调用者负责关闭 Body）。
 func (c *Client) rawDoWithResp(ctx context.Context, method, url string, body any, headers map[string]string, contentType string) (*http.Response, error) {
@@ -479,19 +544,13 @@ func (c *Client) doBizGet(ctx context.Context, url string, headers map[string]st
 	}
 	defer drainAndClose(resp.Body)
 
-	// doBizGet 读响应体同样封顶
-	// maxResponseBodySize（当前 4MB，2026-08-27 事故后放宽）——与 httpDo 同构，
-	// 防异常/被劫持服务端塞超大 body 造成内存放大。
-	// doBizGet 当前只有一个调用点：激活链步骤1（持 sm.mu 锁，session.go）。
-	// 超限分支直 Close 放弃 keep-alive（与 httpDo 同纪律，不再经 defer
-	// drainAndClose 无上限续读剩余 body）。
-	bodyBytes, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBodySize+1))
+	// doBizGet 读响应体同样封顶 maxResponseBodySize——与 httpDo 同构，
+	// 防异常/被劫持服务端塞超大 body 造成内存放大。完整档限读与超限
+	// Close 由 readBodyCapped 统一承载。doBizGet 当前只有一个调用点：
+	// 激活链步骤1（持 sm.mu 锁，session.go）。
+	bodyBytes, err := readBodyCapped(resp, ErrInvalidResponse)
 	if err != nil {
-		return nil, fmt.Errorf("%w: 读取 GET %s 响应体失败: %w", ErrNetwork, logx.RedactBody(url), err)
-	}
-	if len(bodyBytes) > maxResponseBodySize {
-		_ = resp.Body.Close()
-		return nil, fmt.Errorf("%w: GET %s 响应体超过 %d 字节上限", ErrInvalidResponse, logx.RedactBody(url), maxResponseBodySize)
+		return nil, fmt.Errorf("%w: GET %s 响应体读取失败: %w", ErrInvalidResponse, logx.RedactBody(url), err)
 	}
 	if resp.StatusCode != http.StatusOK {
 		// 按 StatusCode 切换 sentinel 包装，让 SDK 用户能通过 errors.Is 精确识别
