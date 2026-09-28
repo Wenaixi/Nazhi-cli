@@ -85,7 +85,23 @@ func DecodeReturnData[T any](resp UnifiedResponse) (*T, error) {
 	return decodeField[T](resp.ReturnData, "returnData")
 }
 
-// DecodeDataList 将 dataList 解析为切片。
+// DecodeDataList 将 dataList 解析为切片 T。
+//
+// 解码是全有或全无：任一元素的任一字段类型违约，整页即返回错误并丢弃
+// 已解出的全部元素，不返回部分结果。这是本包的主动选择——encoding/json
+// 原生会保留已解出的元素并让违约元素取零值。平台字段形态多变
+// （number / 数字字符串 / 整值浮点 / 空串），故 wire 字段需各自实现
+// UnmarshalJSON 兼容，否则一个异常元素即掀翻整页。错误文本含字段路径
+// 但不含元素下标。
+//
+// 多数入口的既定策略是硬失败上抛（client 的 fetchCirclePage、
+// GetHonorTypes、GetTypicalCaseList）。需要「跳过坏元素继续」的调用方
+// 须自行逐元素解码；多页场景下全灭是逐页生效的，首页违约丢全部、
+// 后续页违约仅丢该页。
+//
+// 三种空形态互相区分：缺键与 null 字面量返回 (nil, nil) 且不算错误，
+// 空数组返回非 nil 空切片。后者的非 nil 是承重的——client 侧 honor 的
+// returnData 兜底判据依赖「缺失为 nil」与「空数组为非 nil」的可区分性。
 func DecodeDataList[T any](resp UnifiedResponse) ([]T, error) {
 	return decodeFieldSlice[T](resp.DataList, "dataList")
 }
