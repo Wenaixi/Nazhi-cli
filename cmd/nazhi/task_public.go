@@ -32,8 +32,5 @@ var taskPublicCmd = &cobra.Command{
 
 func init() {
 	registerBizFlags(taskPublicCmd)
-	taskPublicCmd.Flags().Int("offset", 0, "跳过前 N 条（配合 --limit 使用）")
-	taskPublicCmd.Flags().Int("limit", 0, "只输出前 N 条（0 表示全量）")
-	taskPublicCmd.Flags().Bool("count", false, "只输出记录总数，不拉列表")
-	taskPublicCmd.Flags().String("key", "", "搜索关键字（可空，对应 getStudentCircle 的 key）")
+	registerCircleListFlags(taskPublicCmd)
 }

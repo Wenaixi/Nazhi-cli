@@ -43,14 +43,8 @@ var taskDoneCmd = &cobra.Command{
 
 func init() {
 	registerBizFlags(taskSubmittedCmd)
+	registerCircleListFlags(taskSubmittedCmd)
+	// done 别名需独立注册 flag，否则 cobra 解析不认识该命令的 flag。
 	registerBizFlags(taskDoneCmd)
-	taskSubmittedCmd.Flags().Int("offset", 0, "跳过前 N 条（配合 --limit 使用）")
-	taskSubmittedCmd.Flags().Int("limit", 0, "只输出前 N 条（0 表示全量）")
-	taskSubmittedCmd.Flags().Bool("count", false, "只输出记录总数，不拉列表")
-	taskSubmittedCmd.Flags().String("key", "", "搜索关键字（可空，对应 getStudentCircle 的 key）")
-	// done 别名也需要注册 flag，否则 cobra 解析不认识
-	taskDoneCmd.Flags().Int("offset", 0, "跳过前 N 条（配合 --limit 使用）")
-	taskDoneCmd.Flags().Int("limit", 0, "只输出前 N 条（0 表示全量）")
-	taskDoneCmd.Flags().Bool("count", false, "只输出记录总数，不拉列表")
-	taskDoneCmd.Flags().String("key", "", "搜索关键字（可空，对应 getStudentCircle 的 key）")
+	registerCircleListFlags(taskDoneCmd)
 }

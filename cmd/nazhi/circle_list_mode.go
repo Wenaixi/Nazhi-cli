@@ -153,11 +153,32 @@ func totalOf(pb *types.PageBean) int {
 	return pb.TotalNum
 }
 
+// registerCircleListFlags 注册写实列表命令族共享的 flag。
+//
+// public / teacher / submitted（及其 done 别名）/ withdrawn 此前各写一份
+// 逐字符相同的注册块（done 别名需独立注册，否则 cobra 解析不认识该 flag）。
+// circleListMode 收口了「怎么跑」，此处收口「声明有哪些 flag」——
+// 声明与消费（run 于本文件读取同名 flag）同处一份知识，新增列表级 flag
+// 只改一处，不会漏掉某个命令。
+//
+// 归入本文件而非各命令文件，是为了让声明侧与消费侧同属一个模块；
+// 先例是 registerBizFlags（assembly.go），形态一致。
+//
+// --help 输出不变：cobra 按字典序渲染 flag，声明顺序不影响展示顺序。
+func registerCircleListFlags(cmd *cobra.Command) {
+	cmd.Flags().Int("offset", 0, "跳过前 N 条（配合 --limit 使用）")
+	cmd.Flags().Int("limit", 0, "只输出前 N 条（0 表示全量）")
+	cmd.Flags().Bool("count", false, "只输出记录总数，不拉列表")
+	cmd.Flags().String("key", "", "搜索关键字（可空，对应 getStudentCircle 的 key）")
+}
+
 // ─── 四个命令的模式配置 ───
 //
-// 四个 mode 的全部差异就是「我是哪个写实列表类型」与两处文案。SDK 侧提供
-// 按类型分发的统一入口后，这里从 52 行转发闭包塌缩为 4 行声明——新增一个
-// 列表类型只需在此加一行，不必再写三份转发。
+// 四个 mode 的全部差异就是「我是哪个写实列表类型」与两处文案：label 用于
+// 列表与计数文案，countErrorLabel 仅 submitted 非空（保留其历史上
+// 「获取记录总数失败」无「写实」二字的措辞差异）。SDK 侧提供按类型分发
+// 的统一入口后，这里从 52 行转发闭包塌缩为 4 行声明——新增一个列表类型
+// 只需在此加一行，不必再写三份转发。
 
 var publicCircleListMode = circleListMode{
 	label:    "公示",

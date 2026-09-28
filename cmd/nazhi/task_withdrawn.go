@@ -32,8 +32,5 @@ var taskWithdrawnCmd = &cobra.Command{
 
 func init() {
 	registerBizFlags(taskWithdrawnCmd)
-	taskWithdrawnCmd.Flags().Int("offset", 0, "跳过前 N 条（配合 --limit 使用）")
-	taskWithdrawnCmd.Flags().Int("limit", 0, "只输出前 N 条（0 表示全量）")
-	taskWithdrawnCmd.Flags().Bool("count", false, "只输出记录总数，不拉列表")
-	taskWithdrawnCmd.Flags().String("key", "", "搜索关键字（可空，对应 getStudentCircle 的 key）")
+	registerCircleListFlags(taskWithdrawnCmd)
 }
