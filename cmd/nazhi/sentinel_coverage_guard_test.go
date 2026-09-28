@@ -166,7 +166,7 @@ func TestSentinelFunnelCoverage(t *testing.T) {
 		t.Fatal("未从 mapSentinelToHTTPCode 提取到任何哨兵引用，提取逻辑已失效")
 	}
 
-	var missing []string
+	missing := make([]string, 0, len(declared))
 	for name := range declared {
 		if mapped[name] {
 			continue
