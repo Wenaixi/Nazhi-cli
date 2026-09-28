@@ -251,57 +251,44 @@ func (c *Client) UploadFile(ctx context.Context, filePath string) (*types.Upload
 		return nil, fmt.Errorf("%w: 响应中缺少 returnData", ErrUploadRejected)
 	}
 
-	var result map[string]any
-	// 这里无法用 types.DecodeReturnData[map[string]any] 替代手写 decoder。
+	// id 走 types.NormalizeInteger 单点归一：它统一了整值判定与 int64
+	// 范围上界，缺任一项都会静默产出错误值——旧的 int64(f) 回落把 2^63
+	// 回绕为 math.MinInt64（正 ID 变负数），把 3.9 静默截断为 3。
 	//
-	// DecodeReturnData 用 json.Unmarshal，默认将数字解为 float64。
-	// 而当前代码用 json.NewDecoder + UseNumber 将数字解为 json.Number，
-	// 避免文件 ID 在 >2^53 时的 float64 精度损失。虽然文件 ID 通常在此范围内，
-	// 但与 tokenparse.ExtractFromReturnData 保持一致更安全。
-	//
-	// 如果未来 DecodeReturnData 支持 UseNumber 模式，可以迁移。
-	dec := json.NewDecoder(bytes.NewReader(*unified.ReturnData))
-	dec.UseNumber()
-	if err := dec.Decode(&result); err != nil {
-		return nil, fmt.Errorf("解析 returnData 失败: %w", err)
+	// 不从 map 取 id：UseNumber 解码后拿到的是解码后的值，而归一模块的
+	// 范围判定是针对原始 JSON 字面量定义的。此处直接取 id 键的原始字节，
+	// 与 JSON 字节到 int64 的映射保持一字不差。
+	var idHolder struct {
+		ID *json.RawMessage `json:"id"`
 	}
-
-	// 先判字段是否存在再断言类型，区分『缺少 id』与『类型不匹配』两种根因。
-	rawID, exists := result["id"]
-	if !exists {
+	if err := json.Unmarshal(*unified.ReturnData, &idHolder); err != nil {
+		return nil, fmt.Errorf("%w: 解析 returnData 失败: %w", ErrUploadRejected, err)
+	}
+	if idHolder.ID == nil {
+		// 缺键与显式 null 此前各有文案，保留该区分便于排查。
+		if bytes.Contains(*unified.ReturnData, []byte(`"id"`)) {
+			return nil, fmt.Errorf("%w: returnData.id 字段为 null", ErrUploadRejected)
+		}
 		return nil, fmt.Errorf("%w: returnData 中缺少 id 字段", ErrUploadRejected)
 	}
-	// decode returnData 采用 UseNumber 一致地解析 json.Number，
-	// 但 float64 断言也要兼容——json.Number 需通过 Float64() 转换。
-	var idInt int64
-	var nameStr string
-	switch v := rawID.(type) {
-	case nil:
-		return nil, fmt.Errorf("%w: returnData.id 字段为 null", ErrUploadRejected)
-	case float64:
-		idInt = int64(v)
-	case json.Number:
-		idInt, err = v.Int64()
-		if err != nil {
-			var f float64
-			f, err = v.Float64()
-			if err != nil {
-				return nil, fmt.Errorf("%w: returnData.id 不是合法数字: %w", ErrUploadRejected, err)
-			}
-			idInt = int64(f)
-		}
-	default:
-		return nil, fmt.Errorf("%w: returnData.id 类型不匹配, 期望 float64 或 json.Number 实际 %T", ErrUploadRejected, rawID)
+	idInt, err := types.NormalizeInteger(*idHolder.ID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: returnData.id 非法: %w", ErrUploadRejected, err)
+	}
+	// 归一模块不承载业务语义（缺省形态归零是刻意的），附件 ID 为零或
+	// 负数在业务上无意义：放行会让它流进 pictureList 变成无效载荷，错误
+	// 推迟到服务端才暴露，排查方向被误导到远端。正数性由本调用点判定。
+	if idInt <= 0 {
+		return nil, fmt.Errorf("%w: returnData.id 必须为正整数，实际 %d", ErrUploadRejected, idInt)
 	}
 
-	// 尝试读取 name 字段（可能不存在）
-	if rawName, exists := result["name"]; exists {
-		if s, ok := rawName.(string); ok {
-			nameStr = s
-		}
+	// name 是可选展示字段，不参与上述判定。
+	var nameHolder struct {
+		Name string `json:"name"`
 	}
+	_ = json.Unmarshal(*unified.ReturnData, &nameHolder)
 
-	return &types.UploadFileResult{AttachmentID: idInt, AttachmentName: nameStr}, nil
+	return &types.UploadFileResult{AttachmentID: idInt, AttachmentName: nameHolder.Name}, nil
 }
 
 // DownloadFile 按附件 ID 从公开文件服务器下载图片到本地 dst。

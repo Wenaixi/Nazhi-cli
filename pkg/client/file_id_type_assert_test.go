@@ -1,9 +1,14 @@
 // file_id_type_assert_test.go 验证 UploadFile 解析 returnData['id'] 失败时
-// 错误信息能区分「字段缺失」与「类型不匹配」两种根因。
-// 修复契约：原实现 `id, ok := result["id"].(float64); if !ok { 报"缺少 id 字段" }`
-// 把两种语义完全不同的根因合并成同一条错误信息。修复后：
+// 错误信息能区分「字段缺失」与「值非法」两种根因。
+//
+// 契约（id 经 types.NormalizeInteger 归一后）：
 // - 字段不存在 → "returnData 中缺少 id 字段"
-// - 字段存在但类型不匹配 → "returnData.id 类型不匹配，期望 float64 实际 %T"
+// - 字段为显式 null → "returnData.id 字段为 null"
+// - 字段存在但不是合法整数形态 → "returnData.id 非法: …"
+//
+// 注意「值非法」不等于「类型是 string」：归一口径接受数字字符串
+// （"5139876" 合法，见 file_upload_id_normalize_test.go），故本文件用
+// bool 夹具而非字符串来触发该分支。
 package client_test
 
 import (
@@ -83,11 +88,11 @@ func TestUploadFile_IdFieldMissing(t *testing.T) {
 	}
 }
 
-// TestUploadFile_IdTypeMismatch 验证 returnData.id 是 string 类型时，
-// 错误信息明确说明「类型不匹配」+ 期望/实际类型（而非含糊的「缺少」）。
 func TestUploadFile_IdTypeMismatch(t *testing.T) {
-	// id 字段存在但类型是 string（实际服务端极少见, 但防御性必须有清晰诊断）
-	srv, srvURL := uploadServerWithReturnData(t, `{"id":"abc123"}`)
+	// id 字段存在但不是合法整数形态（实际服务端极少见，但防御性必须有清晰诊断）。
+	// 刻意用 bool 而非字符串：数字字符串是平台的合法形态之一，
+	// 字符串不是「类型不匹配」的判据。
+	srv, srvURL := uploadServerWithReturnData(t, `{"id":true}`)
 	defer srv.Close()
 
 	c, _ := client.New(
@@ -103,15 +108,15 @@ func TestUploadFile_IdTypeMismatch(t *testing.T) {
 
 	errMsg := err.Error()
 
-	// 必须明确说「类型不匹配」（区分于「字段缺失」）
-	if !strings.Contains(errMsg, "类型不匹配") && !strings.Contains(errMsg, "类型") {
-		t.Errorf("错误信息应说明「类型不匹配」, 实际: %v", err)
+	// 必须明确指向 id 字段的取值非法（区分于「字段缺失」）
+	if !strings.Contains(errMsg, "returnData.id") {
+		t.Errorf("错误信息应指向 returnData.id 字段, 实际: %v", err)
 	}
 	// 必须包含实际类型信息
-	if !strings.Contains(errMsg, "string") {
-		t.Errorf("错误信息应包含实际类型 string（%T）, 实际: %v", err, err)
+	if !strings.Contains(errMsg, "bool") {
+		t.Errorf("错误信息应包含实际类型 bool, 实际: %v", err)
 	}
-	// 不应该错误地报「缺少 id 字段」（字段是存在的，只是类型不对）
+	// 不应该错误地报「缺少 id 字段」（字段是存在的，只是取值非法）
 	if strings.Contains(errMsg, "缺少 id 字段") {
 		t.Errorf("错误信息不应报「缺少 id 字段」（字段存在）, 实际: %v", err)
 	}
