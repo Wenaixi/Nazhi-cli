@@ -136,14 +136,15 @@ func (c *Client) FetchTasks(ctx context.Context, token string) ([]types.Task, er
 	}
 
 	headers := c.bizHeaders(token)
-	// 维度数上界钳制（与 FetchTasksJSON raw_json.go:595-601 同纪律）——
+	// 维度数超限时告警，但**不在此处截断**：截断交给 ParallelDims 内的
+	// collectDims 统一执行，因为闸在 id==0 汇总维度过滤**之后**才生效。
+	// 调用点若先在原始列表上截断，汇总维度恰在前 128 内时会提前丢掉一个
+	// 真实维度（实测 201 维含首元素汇总时取到 127 而非 128）。
 	// getDimensions 的维度数来自服务端声明，恶意值驱动全维度并发拉取×单页
-	// 4MB 累积无预算。128 远超任何真实学校维度集（通常 <10），截断保留前
-	// 128 维并 Warn。
+	// 4MB 累积无预算；128 远超任何真实学校维度集（通常 <10）。
 	if len(dimensions) > maxFetchTasksDims {
-		slog.Warn("FetchTasks: 维度数超过钳制上限，截断到前 128 维",
+		slog.Warn(fmt.Sprintf("FetchTasks: 维度数超过钳制上限，将截断到前 %d 维", maxFetchTasksDims),
 			"dims", len(dimensions), "max", maxFetchTasksDims)
-		dimensions = dimensions[:maxFetchTasksDims]
 	}
 
 	limit := len(dimensions)

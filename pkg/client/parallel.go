@@ -138,8 +138,12 @@ func classifyDimErrors(errs []error) (bizErrs, ctxErrs []error, cancelledCount i
 //
 // fan-out 与保序落槽由 collectDims 内核承担（透传路径 FetchTasksJSON 共用
 // 同一内核），本函数只负责展平分片与按 ClassifyError 口径分类错误。
+// 维度数上界由本导出层持有：collectDimsOpts 零值表示不钳制是内核的显式
+// 契约（见 TestCollectDims_NoClampWhenUnset），但 ParallelDims 是面向调用方
+// 的入口，防护不该依赖「内部调用方恰好自己预钳了一次」。维度闸与两条取数
+// 路径同源，均为 maxFetchTasksDims。
 func ParallelDims[T any](ctx context.Context, dims []types.Dimension, limit int, fn func(context.Context, types.Dimension) ([]T, error)) (result *ParallelDimsResult[T], egErr error) {
-	batches, allErrs, egErr := collectDims(ctx, dims, limit, collectDimsOpts{}, fn)
+	batches, allErrs, egErr := collectDims(ctx, dims, limit, collectDimsOpts{maxDims: maxFetchTasksDims}, fn)
 
 	// 容量钳制：维度数 * 10 的预分配由服务端 getDimensions 响应驱动——
 	// 恶意/异常服务端返回 1e5 维度 → 预分配 1e6 槽位 × Task
