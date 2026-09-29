@@ -82,7 +82,12 @@ func CheckResultName(code string) string {
 	}
 }
 
-// Task 是面向调用方的精简任务条目。时间字段为 string，保留服务端原始日期格式（如 "2026-01-12"）。
+// Task 是面向调用方的精简任务条目。
+//
+// 日期展示字段为 string（startDateStr / endDateStr / auditStartDateStr /
+// auditEndDateStr，源自服务端的 *Str 键），保留服务端原始日期格式（如
+// "2026-01-12"）；creationTime / modifyTime 则是平台原始的 number 数组
+// （HAR 实证，如 [2026,1,30,10,19,52]），供脚本按需取值。
 type Task struct {
 	ID               int64   `json:"id"`
 	Name             string  `json:"name"`
