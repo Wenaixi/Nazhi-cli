@@ -171,7 +171,18 @@ func (c *Client) fetchAllCirclePages(ctx context.Context, token string, circleTy
 	// 部分失败时已成功拉取的页仍然有效，合并后连同 err 一并返回，
 	// 语义与此前「失败分支合并一次、成功分支合并一次」完全一致。
 	waitErr := g.Wait()
+	// 合并阶段复核条数闸。上方容量早退分支只按服务端声明的 totalNum 判定，
+	// 翻页页数却取 max(totalPage, ceil(totalNum/pageSize))——totalPage 虚高时
+	// 页数可远超 totalNum 推导值，满页累加后的记录条数能数倍越过
+	// maxSubmittedRecords，而该形态对早退分支不可见（声明 totalNum 未超闸）。
+	// seam 与透传路径的 budgetTruncatePage 同层：整页粒度回退到已合并的合法
+	// 前缀，不静默截断、不丢弃已拉取数据。
 	for pn := 2; pn <= declaredPages; pn++ {
+		if len(all)+len(results[pn].records) > maxSubmittedRecords {
+			slog.Warn("submitted: 合并记录数超过条数上界，回退到已合并前缀",
+				"merged", len(all), "next_page", pn, "next_page_records", len(results[pn].records), "max", maxSubmittedRecords)
+			break
+		}
 		all = append(all, results[pn].records...)
 	}
 	if waitErr != nil {
