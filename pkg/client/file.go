@@ -72,8 +72,9 @@ func isDirectUploadAttachment(filePath string) bool {
 // 但调用方应注意不要在业务 Client 的 baseURL 域上传敏感文件。
 //
 // 上传前自动预处理：
-//   - 图片：任意格式 → JPG + 透明合成 + 压缩至 ≤ 5MB（MaxImageSize，SDK 放宽）
-//   - 非图片附件（.mp4/.txt/.doc/.docx/.wps/.rar/.zip 等前端允许格式）：原样直传，上限 20MB（MaxAttachmentSize，SDK 有意放宽；前端镜像文案 20MB，服务端真实上限约 46.86MiB）
+//   - 图片（扩展名不在下方白名单内者）：按魔术字节尝试解码（已注册 jpeg/png/gif/webp/bmp），
+//     解码成功后转 JPG + 透明合成 + 压缩至 ≤ 5MB（MaxImageSize，SDK 放宽）；解码器不认识的格式报错拒绝
+//   - 非图片附件（directUploadExtensions 白名单：.pdf/.mp4/.txt/.doc/.docx/.wps/.rar/.zip）：原样直传，上限 20MB（MaxAttachmentSize，SDK 有意放宽；前端镜像文案 20MB，服务端真实上限约 46.86MiB）
 //
 // 统一说明：图片压缩后 5MB（SDK 放宽），非图片附件 20MB（SDK 有意放宽，服务端实测支撑）
 // 全部在内存中完成，不写盘、不修改原文件。
