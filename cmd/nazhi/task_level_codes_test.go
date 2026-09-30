@@ -136,9 +136,11 @@ func TestTaskLevelUsage_DerivedFromTable(t *testing.T) {
 		if strings.Contains(usage, "4=区县") {
 			t.Errorf("%s 的 --level usage 仍是旧简写：%q", cmd.Name(), usage)
 		}
-		// 码序是用户可见契约：六个名称都在但顺序错乱时，片段断言会同时通过，
-		// 所以比对由表派生的整句码表串。
-		if !strings.Contains(usage, taskLevelCodeList()) {
+		// 码序是用户可见契约，六个名称齐全但顺序错乱时上两条断言仍会通过。
+		// 期望值必须是独立字面量：若写成 taskLevelCodeList()，期望与实际同源于
+		// 被测函数，排序一旦出错两边一起错，断言恒成立（变异验证坐实过这一点）。
+		const wantCodeList = "1=国家 2=省 3=地区/市 4=区/县/街道/社区 5=校 6=年段"
+		if !strings.Contains(usage, wantCodeList) {
 			t.Errorf("%s 的 --level usage 未按 1..6 顺序给出码表：%q", cmd.Name(), usage)
 		}
 		if _, ok := wantCmds[cmd.Name()]; ok {
