@@ -47,18 +47,30 @@ func init() {
 // 长期分叉：用户照提示理解的值与脚本从 SDK 取到的名称对不上。
 // 由表派生后，改表即改文案，不会再漂。
 func taskLevelUsage() string {
-	return "等级代码（可选，写实：" + taskLevelCodeList() + "；空则原样不默认 5）"
+	return "等级代码（写实：" + taskLevelCodeList() + "）。" + taskLevelRequiredNote
 }
 
 // taskLevelOverrideUsage 派生 preview 命令的 --level usage 文案。
 //
 // preview 与 submit/edit 的 flag 措辞本就分两套：后两者描述「选一个等级提交」，
 // preview 只覆盖 payload 里的字段、不提交，措辞讲的是覆盖行为。刻意保留各自的
-// 语义前缀，但码表部分必须同样由表派生——否则改表时 preview 这处会漂，
+// 语义前缀，但码表与必填规则必须同样由表派生——否则改表时 preview 这处会漂，
 // 而 preview 同样能覆盖 level，用户看不到可选值就无从下手。
 func taskLevelOverrideUsage() string {
-	return "覆盖等级代码；留空保持为空，不填默认值。可选值：" + taskLevelCodeList()
+	return "覆盖等级代码，可选值：" + taskLevelCodeList() + "。" + taskLevelRequiredNote
 }
+
+// taskLevelRequiredNote 说明 level 的填写约束，由 flag usage 告知用户。
+//
+// CLI 侧不校验这些规则（必填由调用方按活动类型保证，是 SDK 的有意取舍），
+// 但前端会校验：活动类型十的表单里 level 无条件必填，类型二/三/四/七的表单里
+// 名次与等级成对——填了其一必须填另一个。不告知的话，用户会撞上平台的拒绝却
+// 找不到原因。取值来自 managementRightTop.vue 的表单校验分支。
+//
+// 「留空原样发送」说的是 CLI 的实际行为：flag 与 payload 都不填 level 时，
+// 请求里就是空字符串，CLI 不会替你猜一个等级填进去。
+const taskLevelRequiredNote = "留空原样发送，CLI 不代填。活动类型 10 必填；" +
+	"类型 2/3/4/7 需与名次（rank）成对出现。"
 
 // taskLevelCodeList 把对照表拼成「1=国家 2=省 …」形式的码表串。
 //
