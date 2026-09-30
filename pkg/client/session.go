@@ -242,7 +242,12 @@ func (sm *sessionManager) LoadToken() string {
 }
 
 // clearBackoff 清除 backoff 状态（lastErr + lastFailedToken）。
-// 内部 helper，仅在 sm.mu 持锁路径内调用。
+// 内部 helper，不自行取锁：sync.Mutex 不可重入，锁语义由调用方决定
+// （与 activateSessionLocked 同一惯例）。
+// 现有调用方：Reset 与 RecordSuccess 均在 sm.mu 持锁路径内；StoreToken 无锁
+// 调用本 helper，属仅测试可达的形态（该方法零生产调用点）。
+// 并发前提：这三个字段的生产读方 isBackoffHit 只由 tryActivate 调用，而
+// tryActivate 要求调用方持 sm.mu——故生产上 backoff 字段的读写同在锁内。
 func (sm *sessionManager) clearBackoff() {
 	sm.lastErr = nil
 	sm.lastFailedToken = ""
@@ -268,7 +273,8 @@ func (sm *sessionManager) InvalidateCachedUserInfo() {
 	sm.mu.Unlock()
 }
 
-// StoreToken 持锁写 token，并清除 backoff 状态。
+// StoreToken 写 token（atomic.Value 原子存储，无需加锁）并清除 backoff 状态。
+// 后者是普通字段写，由 clearBackoff 的调用方锁语义承载，见其注释。
 // 当前无生产调用方，仅供测试构造状态使用；生产路径经 RecordSuccess 写入。
 func (sm *sessionManager) StoreToken(token string) {
 	sm.token.Store(token)
