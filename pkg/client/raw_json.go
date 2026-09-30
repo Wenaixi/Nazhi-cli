@@ -14,6 +14,11 @@
 //     激活后 Marshal 其返回的 UserInfo。两者均含学校信息 SSO 降级补全与班级名清理后处理
 //   - 失败/取消语义与原方法一致，错误链不变
 
+// 内存安全四道闸的上限常量集中在 pagination_bounds.go（页数/字节/条数/维度），
+// 本文件只消费，不再各自定义。字节闸配套纯函数（estimatePagesBudgeted /
+// capAssembledSlice / cumulativeSliceBytes / budgetTruncatePage）由本文件
+// 定义，只被透传路径消费。
+
 package client
 
 import (
@@ -31,9 +36,6 @@ import (
 
 // rawListBytes 返回 dataList 的原始字节。dataList 缺失时返回 nil。
 // 返回 []byte 而非 RawMessage 让 bytes.Buffer 直接 append，避免反复拷贝。
-// 内存安全四道闸的上限常量集中在 pagination_bounds.go（页数/字节/条数/维度），
-// 本文件只消费，不再各自定义。字节闸配套纯函数（estimatePagesBudgeted /
-// capAssembledSlice / budgetTruncatePage）见本文件下方。
 
 // capAssembledSlice 对已累积的 rawResult 切片做总量预算截断。
 // getCirclesJSON/getCirclesLimitJSON 翻页时把每页原始字节累积进 results，

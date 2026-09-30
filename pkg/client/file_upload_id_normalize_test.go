@@ -2,9 +2,8 @@
 //
 // 该值是平台返回的附件标识，经 types.NormalizeInteger 单点归一。
 // 本文件锁定的三条边界都命中生产路径：用例的 id 全部以 JSON 整数字面量
-// 出现在响应中，经 dec.UseNumber() 解为 json.Number 后走
-// Int64 → 失败 → Float64 → int64(f) 回落链（非 json.Number 的 float64
-// 分支在 UseNumber 下不可达，故不作为主测目标）。
+// 出现在响应中，file.go 取 id 键的原始字节直接送归一（不从已解码的 map 取，
+// 因归一模块的范围判定针对原始 JSON 字面量定义）。
 //
 // 越界与非整值必须显式报错而非静默产出错误值：静默回绕会让
 // task.go 的 pictureList 收到负数附件 ID，错误推迟到服务端才暴露，
