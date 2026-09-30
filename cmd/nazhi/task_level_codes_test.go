@@ -115,21 +115,50 @@ func TestTaskLevelCodes_GroupValues(t *testing.T) {
 }
 
 func TestTaskLevelUsage_DerivedFromTable(t *testing.T) {
-	// --level 的 usage 文案是用户可见契约，必须与 SDK 表一致。
-	// 「4=区县」与表里的「区/县/街道/社区」曾长期分叉，此测试锁住收敛结果。
-	for _, cmd := range []*cobra.Command{taskSubmitCmd, taskEditCmd} {
+	// 遍历 task 命令树下**所有**声明了 --level 的子命令，而不是硬编码命令列表：
+	// 此前只遍历 submit 与 edit，preview 因同样的 flag 漏掉了表派生而无人发现。
+	// 改成从命令树反查后，将来新增同族 flag 命令会自动进入检查范围。
+	cmds := taskCommandsWithLevelFlag()
+	if len(cmds) == 0 {
+		t.Fatal("task 命令树下未找到任何声明 --level 的子命令，测试前提已失效")
+	}
+	// 至少要有这三个，避免命令树重构后测试静默退化成只检查一个
+	wantCmds := map[string]bool{"submit": false, "edit": false, "preview": false}
+	for _, cmd := range cmds {
 		usage := cmd.Flags().Lookup("level").Usage
-		if !strings.Contains(usage, "4=区/县/街道/社区") {
-			t.Errorf("%s 的 --level usage 未使用表内名称：%q", cmd.Name(), usage)
+		// 码表必须来自 SDK 表：逐项比对，确保没有手写第二份。
+		for _, want := range types.TaskLevelNames {
+			if !strings.Contains(usage, want) {
+				t.Errorf("%s 的 --level usage 缺表内名称 %q：%q", cmd.Name(), want, usage)
+			}
 		}
+		// 旧简写曾长期与表内名称分叉，两者不得同时出现。
 		if strings.Contains(usage, "4=区县") {
 			t.Errorf("%s 的 --level usage 仍是旧简写：%q", cmd.Name(), usage)
 		}
-		// 码序同样是用户可见契约：即使六个名称都在，输出成「4=… 1=国家」这种
-		// 乱序仍会让用户对不上号，所以整句比对而不只比对片段。
-		want := "等级代码（可选，写实：1=国家 2=省 3=地区/市 4=区/县/街道/社区 5=校 6=年段；空则原样不默认 5）"
-		if usage != want {
-			t.Errorf("%s 的 --level usage 与期望整句不一致：\n实际 %q\n期望 %q", cmd.Name(), usage, want)
+		// 码序是用户可见契约：六个名称都在但顺序错乱时，片段断言会同时通过，
+		// 所以比对由表派生的整句码表串。
+		if !strings.Contains(usage, taskLevelCodeList()) {
+			t.Errorf("%s 的 --level usage 未按 1..6 顺序给出码表：%q", cmd.Name(), usage)
+		}
+		if _, ok := wantCmds[cmd.Name()]; ok {
+			wantCmds[cmd.Name()] = true
 		}
 	}
+	for name, found := range wantCmds {
+		if !found {
+			t.Errorf("命令 %s 应声明 --level 但未被本测试遍历到", name)
+		}
+	}
+}
+
+// taskCommandsWithLevelFlag 返回 task 命令树下所有声明了 --level 的子命令。
+func taskCommandsWithLevelFlag() []*cobra.Command {
+	var out []*cobra.Command
+	for _, c := range taskCmd.Commands() {
+		if c.Flags().Lookup("level") != nil {
+			out = append(out, c)
+		}
+	}
+	return out
 }

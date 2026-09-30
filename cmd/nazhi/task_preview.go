@@ -28,7 +28,7 @@ func init() {
 	registerBizFlags(taskPreviewCmd)
 	taskPreviewCmd.Flags().String("payload", "", "任务 JSON（必填，@file.json 读文件或 - 读 stdin）")
 	taskPreviewCmd.Flags().String("address", "", "覆盖 payload.address；留空保持为空，不回填学校名")
-	taskPreviewCmd.Flags().String("level", "", "覆盖等级代码；留空保持为空，不填默认值")
+	taskPreviewCmd.Flags().String("level", "", taskLevelOverrideUsage())
 	taskPreviewCmd.Flags().Bool("edit", false, "预览编辑模式（payload 必须含 id）")
 	// preview 有提交/编辑两个分支，两者允许集相同（taskInputKeysAll）
 	attachAllowedKeysHelp(taskPreviewCmd, taskInputKeysAll.display(), false)

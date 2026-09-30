@@ -21,8 +21,11 @@ var taskLevelCodesCmd = &cobra.Command{
 	Short: "查看写实各编号字段的取值对照表",
 	Long: `输出写实域三组编号字段的取值对照表（等级 level、审核情况 checkResult、承担角色 playRole）。
 
-纯本地查表，不需要 --token，不访问网络。取值与网页端展示文案一致；
-平台为准，本表供脚本与人工速查。`,
+纯本地查表，不需要 --token，不访问网络。取值与网页端写实列表的展示文案一致。
+
+与 circle dict --cate-code 23 的分工：本命令是离线速查，取值来自网页端的展示映射；
+那条命令读服务端字典接口，用于核对平台当前实际的字典内容。两者都可用，若不一致
+以服务端为准。`,
 	Example: `  nazhi task level-codes`,
 	Args:    cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
@@ -38,18 +41,33 @@ func init() {
 	taskCmd.AddCommand(taskLevelCodesCmd)
 }
 
-// taskLevelUsage 由 SDK 对照表派生 --level 的 usage 文案。
+// taskLevelUsage 由 SDK 对照表派生 --level 的 usage 文案（提交/编辑语义）。
 //
 // 此前两处 flag 各自硬编码「4=区县」，与 TaskLevelName 的「区/县/街道/社区」
 // 长期分叉：用户照提示理解的值与脚本从 SDK 取到的名称对不上。
 // 由表派生后，改表即改文案，不会再漂。
+func taskLevelUsage() string {
+	return "等级代码（可选，写实：" + taskLevelCodeList() + "；空则原样不默认 5）"
+}
+
+// taskLevelOverrideUsage 派生 preview 命令的 --level usage 文案。
+//
+// preview 与 submit/edit 的 flag 措辞本就分两套：后两者描述「选一个等级提交」，
+// preview 只覆盖 payload 里的字段、不提交，措辞讲的是覆盖行为。刻意保留各自的
+// 语义前缀，但码表部分必须同样由表派生——否则改表时 preview 这处会漂，
+// 而 preview 同样能覆盖 level，用户看不到可选值就无从下手。
+func taskLevelOverrideUsage() string {
+	return "覆盖等级代码；留空保持为空，不填默认值。可选值：" + taskLevelCodeList()
+}
+
+// taskLevelCodeList 把对照表拼成「1=国家 2=省 …」形式的码表串。
 //
 // sort.Strings 排的是字符串序，不是数值序：当前键只有 "1".."6"，两者恰好
 // 同序，所以用户看到的是自然顺序。若平台日后出现两位数编号（如 "10"），
-// 字符串序会把它排到 "2" 之前，usage 文案的码序就不再自然——那时需要改成
+// 字符串序会把它排到 "2" 之前，文案里的码序就不再自然——那时需要改成
 // 数值排序。注意 CLI 的 level-codes 输出走 encoding/json，本身按字符串序
 // 序列化同一批键，届时两处会一起出现同样的顺序问题。
-func taskLevelUsage() string {
+func taskLevelCodeList() string {
 	keys := make([]string, 0, len(types.TaskLevelNames))
 	for code := range types.TaskLevelNames {
 		keys = append(keys, code)
@@ -59,5 +77,5 @@ func taskLevelUsage() string {
 	for _, code := range keys {
 		parts = append(parts, code+"="+types.TaskLevelNames[code])
 	}
-	return "等级代码（可选，写实：" + strings.Join(parts, " ") + "；空则原样不默认 5）"
+	return strings.Join(parts, " ")
 }
