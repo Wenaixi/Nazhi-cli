@@ -32,8 +32,11 @@ const (
 	CircleListWithdrawn CircleListType = 4
 )
 
-// Label 返回写实列表类型的中文领域名，供 CLI 文案与错误信息使用。
-// 未知类型返回空串，调用方应先经 Valid 判定。
+// Label 返回写实列表类型的中文领域名。未知类型返回空串，调用方应先经 Valid 判定。
+//
+// 与 CLI 的措辞差异是有意的：CLI 的 circleListMode.label 用「教师」而非
+// 「教师写实」，那处注释写明 label 是领域名词、用于简短的用户提示与错误文案。
+// 本函数给的是词汇表里的正式术语，供需要精确表述的调用方使用。
 func (t CircleListType) Label() string {
 	switch t {
 	case CircleListPublic:

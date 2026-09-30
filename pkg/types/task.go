@@ -74,6 +74,11 @@ var TaskLevelNames = map[string]string{
 }
 
 // TaskLevelName 返回等级代码对应的展示名（1..6），未知返回空串。
+//
+// 入参是字符串码，而写实记录上的 CircleRecord.Level 是 int——两者类型不同，
+// 从记录取值后需自行转换：TaskLevelName(strconv.Itoa(rec.Level))。
+// 未提供 int 重载是有意取舍：改 CircleRecord.Level 的类型属破坏性变更，
+// 而逐次转换的成本远低于让所有消费方承担类型迁移。
 func TaskLevelName(code string) string {
 	return TaskLevelNames[code]
 }
@@ -107,6 +112,8 @@ var CheckResultNames = map[string]string{
 }
 
 // CheckResultName 返回审核情况代码的展示名。
+// 入参类型与 CircleRecord.CheckResult（int）不同，取记录后需 strconv.Itoa 转换，
+// 理由同 TaskLevelName。
 func CheckResultName(code string) string {
 	return CheckResultNames[code]
 }
