@@ -2,10 +2,12 @@ package main
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/Wenaixi/nazhi-cli/pkg/envelope"
 	"github.com/Wenaixi/nazhi-cli/pkg/types"
+	"github.com/spf13/cobra"
 )
 
 // runLevelCodes 执行 `nazhi task level-codes` 并返回解析后的 envelope data。
@@ -83,6 +85,26 @@ func TestTaskLevelCodes_LevelValues(t *testing.T) {
 	for code, name := range want {
 		if level[code] != name {
 			t.Errorf("level[%q]=%q，期望 %q", code, level[code], name)
+		}
+	}
+}
+
+func TestTaskLevelUsage_DerivedFromTable(t *testing.T) {
+	// --level 的 usage 文案是用户可见契约，必须与 SDK 表一致。
+	// 「4=区县」与表里的「区/县/街道/社区」曾长期分叉，此测试锁住收敛结果。
+	for _, cmd := range []*cobra.Command{taskSubmitCmd, taskEditCmd} {
+		usage := cmd.Flags().Lookup("level").Usage
+		if !strings.Contains(usage, "4=区/县/街道/社区") {
+			t.Errorf("%s 的 --level usage 未使用表内名称：%q", cmd.Name(), usage)
+		}
+		if strings.Contains(usage, "4=区县") {
+			t.Errorf("%s 的 --level usage 仍是旧简写：%q", cmd.Name(), usage)
+		}
+		// 码序同样是用户可见契约：即使六个名称都在，输出成「4=… 1=国家」这种
+		// 乱序仍会让用户对不上号，所以整句比对而不只比对片段。
+		want := "等级代码（可选，写实：1=国家 2=省 3=地区/市 4=区/县/街道/社区 5=校 6=年段；空则原样不默认 5）"
+		if usage != want {
+			t.Errorf("%s 的 --level usage 与期望整句不一致：\n实际 %q\n期望 %q", cmd.Name(), usage, want)
 		}
 	}
 }

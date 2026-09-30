@@ -1,6 +1,9 @@
 package main
 
 import (
+	"sort"
+	"strings"
+
 	"github.com/Wenaixi/nazhi-cli/pkg/envelope"
 	"github.com/Wenaixi/nazhi-cli/pkg/types"
 	"github.com/spf13/cobra"
@@ -33,4 +36,22 @@ var taskLevelCodesCmd = &cobra.Command{
 
 func init() {
 	taskCmd.AddCommand(taskLevelCodesCmd)
+}
+
+// taskLevelUsage 由 SDK 对照表派生 --level 的 usage 文案。
+//
+// 此前两处 flag 各自硬编码「4=区县」，与 TaskLevelName 的「区/县/街道/社区」
+// 长期分叉：用户照提示理解的值与脚本从 SDK 取到的名称对不上。
+// 由表派生后，改表即改文案，不会再漂。
+func taskLevelUsage() string {
+	keys := make([]string, 0, len(types.TaskLevelNames))
+	for code := range types.TaskLevelNames {
+		keys = append(keys, code)
+	}
+	sort.Strings(keys)
+	parts := make([]string, 0, len(keys))
+	for _, code := range keys {
+		parts = append(parts, code+"="+types.TaskLevelNames[code])
+	}
+	return "等级代码（可选，写实：" + strings.Join(parts, " ") + "；空则原样不默认 5）"
 }

@@ -26,6 +26,6 @@ func init() {
 	registerBizFlags(taskSubmitCmd)
 	taskSubmitCmd.Flags().String("payload", "", "任务 JSON（必填，可用 @file.json 从文件读取，或 - 从 stdin 读取）")
 	taskSubmitCmd.Flags().String("address", "", "地点（可选，覆盖 payload.address；空则原样，不默认学校名）")
-	taskSubmitCmd.Flags().String("level", "", "等级代码（可选，写实：1=国家 2=省 3=地区/市 4=区县 5=校 6=年段；空则原样不默认 5）")
+	taskSubmitCmd.Flags().String("level", "", taskLevelUsage())
 	attachAllowedKeysHelp(taskSubmitCmd, taskInputKeysAll.display(), false)
 }
