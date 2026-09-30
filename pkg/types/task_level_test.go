@@ -43,3 +43,48 @@ func TestCheckResultName_Exhaustive(t *testing.T) {
 		}
 	}
 }
+
+func TestLevelTables_MatchConstants(t *testing.T) {
+	if len(TaskLevelNames) != 6 {
+		t.Fatalf("TaskLevelNames 应有 6 项，实际 %d", len(TaskLevelNames))
+	}
+	if len(CheckResultNames) != 4 {
+		t.Fatalf("CheckResultNames 应有 4 项，实际 %d", len(CheckResultNames))
+	}
+	if len(PlayRoleNames) != 3 {
+		t.Fatalf("PlayRoleNames 应有 3 项，实际 %d", len(PlayRoleNames))
+	}
+	// 表的每一项都必须能被同码的查表函数取到同一名称，
+	// 防止「加了常量忘了加表项」这类半边漂移。
+	for code := range TaskLevelNames {
+		if got := TaskLevelName(code); got != TaskLevelNames[code] {
+			t.Errorf("TaskLevelName(%q)=%q 与表项 %q 不一致", code, got, TaskLevelNames[code])
+		}
+	}
+	for code := range CheckResultNames {
+		if got := CheckResultName(code); got != CheckResultNames[code] {
+			t.Errorf("CheckResultName(%q)=%q 与表项 %q 不一致", code, got, CheckResultNames[code])
+		}
+	}
+	for code := range PlayRoleNames {
+		if got := PlayRoleName(code); got != PlayRoleNames[code] {
+			t.Errorf("PlayRoleName(%q)=%q 与表项 %q 不一致", code, got, PlayRoleNames[code])
+		}
+	}
+}
+
+func TestPlayRoleName_Exhaustive(t *testing.T) {
+	cases := []struct{ code, want string }{
+		{PlayRoleHost, "主持策划者"},
+		{PlayRoleMainParticipant, "主要参与者"},
+		{PlayRoleParticipant, "参与者"},
+		{"", ""},
+		{"0", ""},
+		{"4", ""},
+	}
+	for _, tc := range cases {
+		if got := PlayRoleName(tc.code); got != tc.want {
+			t.Fatalf("PlayRoleName(%q) want %q got %q", tc.code, tc.want, got)
+		}
+	}
+}

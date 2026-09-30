@@ -16,6 +16,20 @@ const (
 	PlayRoleParticipant     = "3" // 参与者
 )
 
+// PlayRoleNames 是承担角色码到展示名的对照表，是 playRole 组编号语义的唯一真相源。
+//
+// 取值来自前端三组件逐字一致的 switch；平台无对应字典接口，是纯前端硬编码。
+var PlayRoleNames = map[string]string{
+	PlayRoleHost:            "主持策划者",
+	PlayRoleMainParticipant: "主要参与者",
+	PlayRoleParticipant:     "参与者",
+}
+
+// PlayRoleName 返回承担角色代码的展示名，未知返回空串。
+func PlayRoleName(code string) string {
+	return PlayRoleNames[code]
+}
+
 // 写实等级常量（对应服务端 level，对齐前端管理端字典与展示映射）。
 //
 // 前端来源（reference/nazhi/src 对照）：
@@ -34,24 +48,26 @@ const (
 	TaskLevelGrade    = "6" // 年段
 )
 
+// TaskLevelNames 是写实等级码到展示名的对照表，是 level 组编号语义的唯一真相源。
+//
+// 取值来自前端三组件逐字一致的 switch（公示页与管理页的写实列表展示路径），
+// 与前端 management 端表单的字典接口（cateCode=23）取值同源但用途不同：
+// 字典供表单选值，本表供展示与离线速查。
+//
+// 注意：典型案例域另有一套 level 码表（1=国际/2=省/3=市/4=区县/5=学校），
+// 与本表语义不同，严禁合并。
+var TaskLevelNames = map[string]string{
+	TaskLevelNational: "国家",
+	TaskLevelProvince: "省",
+	TaskLevelCity:     "地区/市",
+	TaskLevelCounty:   "区/县/街道/社区",
+	TaskLevelSchool:   "校",
+	TaskLevelGrade:    "年段",
+}
+
 // TaskLevelName 返回等级代码对应的展示名（1..6），未知返回空串。
 func TaskLevelName(code string) string {
-	switch code {
-	case TaskLevelNational:
-		return "国家"
-	case TaskLevelProvince:
-		return "省"
-	case TaskLevelCity:
-		return "地区/市"
-	case TaskLevelCounty:
-		return "区/县/街道/社区"
-	case TaskLevelSchool:
-		return "校"
-	case TaskLevelGrade:
-		return "年段"
-	default:
-		return ""
-	}
+	return TaskLevelNames[code]
 }
 
 // 审核情况常量（对应服务端 checkResult，前端写实表单）。
@@ -66,20 +82,21 @@ const (
 	CheckResultPoor      = "4" // 差
 )
 
+// CheckResultNames 是审核情况码到展示名的对照表，是 checkResult 组编号语义的唯一真相源。
+//
+// 取值来自前端三组件逐字一致的 switch。同一字段在前端另有两种表述：
+// 弹窗「考核情况」单选只给两项（1 优秀 / 3 合格），弹窗「审核情况」下拉把第三档写作「中」。
+// 本表取写实列表展示路径的「合格」，与既有 SDK 行为一致。
+var CheckResultNames = map[string]string{
+	CheckResultExcellent: "优秀",
+	CheckResultGood:      "良",
+	CheckResultPass:      "合格",
+	CheckResultPoor:      "差",
+}
+
 // CheckResultName 返回审核情况代码的展示名。
 func CheckResultName(code string) string {
-	switch code {
-	case CheckResultExcellent:
-		return "优秀"
-	case CheckResultGood:
-		return "良"
-	case CheckResultPass:
-		return "合格"
-	case CheckResultPoor:
-		return "差"
-	default:
-		return ""
-	}
+	return CheckResultNames[code]
 }
 
 // Task 是面向调用方的精简任务条目。
