@@ -36,9 +36,12 @@ var taskListCmd = &cobra.Command{
 		printVerbose("正在获取任务列表...")
 		tasks, err := c.FetchTasks(cmd.Context(), token)
 		if err != nil {
+			// partial 只在「确有部分结果」时成立，故两个纯前置失败的哨兵
+			// （ErrEmptyUserInfo / ErrSessionBackoff）不列入：它们只由 session
+			// 预热产生，而预热失败时 FetchTasks 走首个出口返回 nil 结果，
+			// 恒不满足 len(tasks)>0 这半个合取项。判定清单因此只保留
+			// 「维度级失败」的三类：业务拒绝与 context 取消/超时。
 			isPartialErr := errors.Is(err, client.ErrBusinessRejected) ||
-				errors.Is(err, client.ErrEmptyUserInfo) ||
-				errors.Is(err, client.ErrSessionBackoff) ||
 				errors.Is(err, context.Canceled) ||
 				errors.Is(err, context.DeadlineExceeded)
 			if isPartialErr && len(tasks) > 0 {
