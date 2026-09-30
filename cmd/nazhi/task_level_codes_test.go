@@ -57,7 +57,9 @@ func TestTaskLevelCodes_ThreeGroupsPresent(t *testing.T) {
 
 func TestTaskLevelCodes_MatchesSDKTables(t *testing.T) {
 	data := runLevelCodes(t)
-	// 命令输出必须逐项等于 SDK 的表，不允许命令侧另抄一份。
+	// 锁定命令输出是 SDK 表的逐项透传，没有按命令侧的另一份文案加工或裁剪。
+	// 注意本测试与命令读的是同一张表，因此抓不到「命令侧另抄一份内容相同的
+	// 字面量」——那类漂移由 TestTaskLevelCodes_GroupValues 的独立字面量期望值守住。
 	for key, want := range map[string]map[string]string{
 		"level":       types.TaskLevelNames,
 		"checkResult": types.CheckResultNames,
@@ -75,17 +77,40 @@ func TestTaskLevelCodes_MatchesSDKTables(t *testing.T) {
 	}
 }
 
-func TestTaskLevelCodes_LevelValues(t *testing.T) {
+func TestTaskLevelCodes_GroupValues(t *testing.T) {
 	// 锁定三组的权威取值，防止有人改表时忘了同步前端语义。
-	level := runLevelCodes(t)["level"]
-	want := map[string]string{
-		"1": "国家", "2": "省", "3": "地区/市",
-		"4": "区/县/街道/社区", "5": "校", "6": "年段",
+	// want 必须是字面量：一旦改成引用 SDK 表，命令与期望就同源，
+	// 断言退化成立即比较，也锁不住「命令侧另抄一份内容相同的字面量」。
+	groups := []struct {
+		key  string
+		want map[string]string
+	}{
+		{"level", map[string]string{
+			"1": "国家", "2": "省", "3": "地区/市",
+			"4": "区/县/街道/社区", "5": "校", "6": "年段",
+		}},
+		{"checkResult", map[string]string{
+			"1": "优秀", "2": "良", "3": "合格", "4": "差",
+		}},
+		{"playRole", map[string]string{
+			"1": "主持策划者", "2": "主要参与者", "3": "参与者",
+		}},
 	}
-	for code, name := range want {
-		if level[code] != name {
-			t.Errorf("level[%q]=%q，期望 %q", code, level[code], name)
-		}
+	data := runLevelCodes(t)
+	for _, g := range groups {
+		t.Run(g.key, func(t *testing.T) {
+			got := data[g.key]
+			// 条目数一并比对：只逐项查字面量的话，表里多出一项无人认领的
+			// 新码（如 "7"）也会全绿。
+			if len(got) != len(g.want) {
+				t.Fatalf("%s 组条目数不符：命令 %d 项，期望 %d 项", g.key, len(got), len(g.want))
+			}
+			for code, name := range g.want {
+				if got[code] != name {
+					t.Errorf("%s[%q]=%q，期望 %q", g.key, code, got[code], name)
+				}
+			}
+		})
 	}
 }
 

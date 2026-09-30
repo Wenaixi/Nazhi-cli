@@ -19,6 +19,10 @@ const (
 // PlayRoleNames 是承担角色码到展示名的对照表，是 playRole 组编号语义的唯一真相源。
 //
 // 取值来自前端三组件逐字一致的 switch；平台无对应字典接口，是纯前端硬编码。
+//
+// 可变包级状态：本表是导出变量，下游写入会直接改变 PlayRoleName 的返回值。
+// Go 没有只读 map 的惯用写法，而可枚举正是本表存在的理由（CLI 查表命令需遍历它），
+// 故此处不加防御。下游只应读取，不要写入本表。
 var PlayRoleNames = map[string]string{
 	PlayRoleHost:            "主持策划者",
 	PlayRoleMainParticipant: "主要参与者",
@@ -56,6 +60,10 @@ const (
 //
 // 注意：典型案例域另有一套 level 码表（1=国际/2=省/3=市/4=区县/5=学校），
 // 与本表语义不同，严禁合并。
+//
+// 可变包级状态：本表是导出变量，下游写入会直接改变 TaskLevelName 的返回值。
+// Go 没有只读 map 的惯用写法，而可枚举正是本表存在的理由（CLI 查表命令需遍历它），
+// 故此处不加防御。下游只应读取，不要写入本表。
 var TaskLevelNames = map[string]string{
 	TaskLevelNational: "国家",
 	TaskLevelProvince: "省",
@@ -87,6 +95,10 @@ const (
 // 取值来自前端三组件逐字一致的 switch。同一字段在前端另有两种表述：
 // 弹窗「考核情况」单选只给两项（1 优秀 / 3 合格），弹窗「审核情况」下拉把第三档写作「中」。
 // 本表取写实列表展示路径的「合格」，与既有 SDK 行为一致。
+//
+// 可变包级状态：本表是导出变量，下游写入会直接改变 CheckResultName 的返回值。
+// Go 没有只读 map 的惯用写法，而可枚举正是本表存在的理由（CLI 查表命令需遍历它），
+// 故此处不加防御。下游只应读取，不要写入本表。
 var CheckResultNames = map[string]string{
 	CheckResultExcellent: "优秀",
 	CheckResultGood:      "良",

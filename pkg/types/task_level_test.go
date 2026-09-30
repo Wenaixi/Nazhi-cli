@@ -54,8 +54,10 @@ func TestLevelTables_MatchConstants(t *testing.T) {
 	if len(PlayRoleNames) != 3 {
 		t.Fatalf("PlayRoleNames 应有 3 项，实际 %d", len(PlayRoleNames))
 	}
-	// 表的每一项都必须能被同码的查表函数取到同一名称，
-	// 防止「加了常量忘了加表项」这类半边漂移。
+	// 查表函数与表项不得脱节：函数只做一次 map 查表，理论上恒等，
+	// 但改写函数实现（如加入大小写兼容或默认值）时，这层一致性必须由测试兜住。
+	// 注意它防不住「改了表项的值」——值是否正确由 TestTaskLevelName_Exhaustive
+	// 等各组的穷举用例与 CLI 侧 TestTaskLevelCodes_GroupValues 的字面量期望值锁定。
 	for code := range TaskLevelNames {
 		if got := TaskLevelName(code); got != TaskLevelNames[code] {
 			t.Errorf("TaskLevelName(%q)=%q 与表项 %q 不一致", code, got, TaskLevelNames[code])
