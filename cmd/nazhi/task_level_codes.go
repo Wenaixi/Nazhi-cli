@@ -43,6 +43,12 @@ func init() {
 // 此前两处 flag 各自硬编码「4=区县」，与 TaskLevelName 的「区/县/街道/社区」
 // 长期分叉：用户照提示理解的值与脚本从 SDK 取到的名称对不上。
 // 由表派生后，改表即改文案，不会再漂。
+//
+// sort.Strings 排的是字符串序，不是数值序：当前键只有 "1".."6"，两者恰好
+// 同序，所以用户看到的是自然顺序。若平台日后出现两位数编号（如 "10"），
+// 字符串序会把它排到 "2" 之前，usage 文案的码序就不再自然——那时需要改成
+// 数值排序。注意 CLI 的 level-codes 输出走 encoding/json，本身按字符串序
+// 序列化同一批键，届时两处会一起出现同样的顺序问题。
 func taskLevelUsage() string {
 	keys := make([]string, 0, len(types.TaskLevelNames))
 	for code := range types.TaskLevelNames {
