@@ -60,7 +60,7 @@ Go SDK 三包：`pkg/client`（Client + 业务方法 + Option）、`pkg/types`�
 
 ## 表 C：状态字段速查
 
-| 字段 | 含义 | 判定处（本地镜像 src/components/management/managementRightBottom.vue） |
+| 字段 | 含义 | 判定处（本地镜像 src/components/ 下的真实业务组件） |
 |------|------|------|
 | 记录 `type` | 发布者类型：1=学生，2=教师 | 头像 personType、编辑按钮 `item.type==1` |
 | 记录 `status` | 0=正常可编辑删除；1=锁定；2=被撤回 | 第 42/46 行 v-if 条件 |
@@ -68,6 +68,9 @@ Go SDK 三包：`pkg/client`（Client + 业务方法 + Option）、`pkg/types`�
 | `ifMySelf` | 是否本人记录（int 0/1） | 操作按钮显隐 |
 | 任务 `circleTaskStatus` | 上传期/已结束 + 未提交/已提交 文案 | managementLeftBottom.vue 任务统计 |
 | 任务 `submitted` | 布尔完成标志 | CLI `task list` 输出 |
+| 写实 `level` | 1=国家；2=省；3=地区/市；4=区/县/街道/社区；5=校；6=年段 | 三组件逐字一致的 `switch (map.level)`：mainMidSearch.vue、managementRightBottom.vue、yhmanagement/managementRightBottom.vue |
+| 写实 `check_result` | 1=优秀；2=良；3=合格；4=差 | 同上三组件的 `switch (map.check_result)`。注意弹窗内另有两种表述：「考核情况」单选只给两项（1 优秀 / 3 合格），「审核情况」下拉把第三档写作「中」 |
+| 写实 `play_role` | 1=主持策划者；2=主要参与者；3=参与者 | 同上三组件的 `switch (map.play_role)`；平台无对应字典接口，是纯前端硬编码 |
 
 ## 参照库升级
 
