@@ -725,3 +725,71 @@ func TestDecodeImage_BadInput_IsInvalidPayload(t *testing.T) {
 		t.Errorf("解码失败应包 ErrInvalidPayload，实际 %v", err)
 	}
 }
+
+// writePNGFile 生成指定尺寸的 PNG 并返回路径。
+// 逐像素填真实内容（而非空 Rect），确保 png.Encode 产出的文件能被 image.Decode 解码。
+func writePNGFile(t *testing.T, name string, w, h int) string {
+	t.Helper()
+	img := image.NewNRGBA(image.Rect(0, 0, w, h))
+	for y := range h {
+		for x := range w {
+			img.Set(x, y, color.NRGBA{R: uint8(x % 256), G: uint8(y % 256), B: 128, A: 255})
+		}
+	}
+	path := t.TempDir() + "/" + name
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatalf("创建 %s 失败: %v", name, err)
+	}
+	if err := png.Encode(f, img); err != nil {
+		_ = f.Close()
+		t.Fatalf("编码 %s 失败: %v", name, err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatalf("关闭 %s 失败: %v", name, err)
+	}
+	return path
+}
+
+// TestPrepareImage_UnencodableImageIsInvalidPayload 锁定编码失败的错误分类，
+// 与 TestDecodeImage_BadInput_IsInvalidPayload（解码失败）互为姊妹契约。
+//
+// 标准库 image/jpeg 对任一边 >= 65536 像素拒绝编码（"image is too large to
+// encode"），而 PNG 解码器无尺寸上限——故这类图片解码成功、压缩环节失败，
+// 且文件体积极小（实测千余字节），远低于 file.go 的体积预检线，预检拦不住。
+//
+// 编码失败同属调用方可控的本地问题（换一张图即可），必须包 ErrInvalidPayload
+// 才能被漏斗映射为 400 / 退出码 3；不含哨兵则落 default: 500 → 退出码 2
+// （可退避重放档），脚本会对永不成功的请求无限重试。
+func TestPrepareImage_UnencodableImageIsInvalidPayload(t *testing.T) {
+	c := internalNewTestClient()
+	path := writePNGFile(t, "unencodable.png", 70000, 4)
+
+	_, _, err := c.prepareImageForUpload(path)
+	if err == nil {
+		t.Fatal("70000x4 PNG 超过 jpeg 单边 65536 上限，应报编码失败，实际 nil")
+	}
+	if !errors.Is(err, ErrInvalidPayload) {
+		t.Errorf("编码失败属调用方可控的本地问题，应包 ErrInvalidPayload（400/退出码 3）；"+
+			"实际未携带，将落漏斗 default 500 → 退出码 2。err=%v", err)
+	}
+}
+
+// TestPrepareImage_UnencodableThresholdBoundary 锁定判定边界在标准库阈值之下：
+// 65535 宽的 PNG 应正常编码产出 JPG。该用例为上一条提供对照——若判定写错成
+// "任意大图都拒绝"，上一条会恒绿。
+func TestPrepareImage_UnencodableThresholdBoundary(t *testing.T) {
+	c := internalNewTestClient()
+	path := writePNGFile(t, "at-threshold.png", 65535, 2)
+
+	data, mime, err := c.prepareImageForUpload(path)
+	if err != nil {
+		t.Fatalf("65535x2 PNG 在标准库阈值内，应正常编码，实际失败: %v", err)
+	}
+	if len(data) == 0 {
+		t.Fatal("阈值内图片应产出非空 JPG 字节")
+	}
+	if mime != "image/jpeg" {
+		t.Errorf("mime 应为 image/jpeg，实际 %q", mime)
+	}
+}

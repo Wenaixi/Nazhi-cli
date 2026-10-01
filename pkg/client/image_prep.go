@@ -64,7 +64,7 @@ func (c *Client) prepareImageForUpload(path string) ([]byte, string, error) {
 	// 尝试用 92 起步
 	data, err := encodeJPEG(img, 92)
 	if err != nil {
-		return nil, "", fmt.Errorf("JPG 编码失败: %w", err)
+		return nil, "", fmt.Errorf("JPG 编码失败: %w", errors.Join(ErrInvalidPayload, err))
 	}
 
 	// 已满足
@@ -82,7 +82,7 @@ func (c *Client) prepareImageForUpload(path string) ([]byte, string, error) {
 	// 质量级联（只跑一次 quality=80）
 	data, err = encodeJPEG(img, q)
 	if err != nil {
-		return nil, "", fmt.Errorf("质量 %d 编码失败: %w", q, err)
+		return nil, "", fmt.Errorf("质量 %d 编码失败: %w", q, errors.Join(ErrInvalidPayload, err))
 	}
 	if len(data) <= MaxImageSize {
 		return data, "image/jpeg", nil
@@ -118,7 +118,7 @@ scaleCascade:
 	data, err = encodeJPEG(current, 40)
 	if err != nil {
 		c.logDebug("缩放级联最终 encodeJPEG 失败：err=%v", err)
-		return nil, "", fmt.Errorf("缩放级联编码失败: %w", err)
+		return nil, "", fmt.Errorf("缩放级联编码失败: %w", errors.Join(ErrInvalidPayload, err))
 	}
 	if len(data) <= MaxImageSize {
 		return data, "image/jpeg", nil
