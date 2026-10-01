@@ -106,19 +106,23 @@ var (
 	//
 	ErrTimeout = errors.New("timeout: request exceeded deadline")
 
-	// ErrInvalidResponse 服务端返回非 200 状态码（4xx 排除 429；noRedirect 下 3xx 也归此类）。
+	// ErrInvalidResponse 服务端响应不可用或不可信——重试通常无意义。
 	//
-	// 触发场景：目标平台返回 4xx 但非 429（404/403/400 等），或未跟随的重定向。
-	// 与 ErrBusinessRejected / ErrRateLimited 的语义边界：
-	//   - ErrInvalidResponse：HTTP 协议层错误（4xx），通常是请求语法错误或权限缺失
-	//   - ErrBusinessRejected：业务逻辑拒绝（HTTP 200 + code=0）
-	//   - ErrRateLimited：HTTP 429 限流（独立处理）
+	// 触发场景比「状态码非 200」宽得多，**不要按状态码理解本哨兵**：
+	//   - HTTP 协议层错误：4xx（429 除外）与 noRedirect 下的 3xx
+	//   - 2xx 但响应体不是预期结构：非 JSON（nginx 维护页 / WAF 挑战页）、
+	//     dataList 不是合法 JSON 数组、响应体超出限读上限
+	//   - 客户端配置类永久错误：下载重定向越界或跨域、0 字节响应、附件超限
 	//
-	// classifyHTTPStatus 的各调用方（request.go httpDo/doBizGet、session.go doGetMenu、
-	// file.go 上传/下载）在收到 4xx-other 时包装本哨兵，
-	// 让 SDK 用户能精确识别「HTTP 层错误」与「业务层错误」，
-	// 避免错误地把 404 等当成业务拒绝走重登录流程。
-	ErrInvalidResponse = errors.New("invalid response: HTTP non-200 non-429")
+	// 与相邻哨兵的语义边界：
+	//   - ErrInvalidResponse：响应本身不可用（重试无意义）
+	//   - ErrBusinessRejected：响应可用但业务拒绝（HTTP 200 + code=0）
+	//   - ErrRateLimited：HTTP 429 限流，应退避后重试
+	//   - ErrNetwork / ErrServiceUnavailable：传输或服务端临时故障，可退避重放
+	//
+	// 归 422 / 退出码 1（见 cmd/nazhi 的 mapSentinelToHTTPCode）：与
+	// ErrBusinessRejected 同档，含义是「别重试，去看服务端/改配置」。
+	ErrInvalidResponse = errors.New("invalid response: unusable or untrusted server response")
 
 	// ErrAllDecodersFailed 表示 doBizGetDecode 的所有解码器均未命中（业务成功但空数据）。
 	//
