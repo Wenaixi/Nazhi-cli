@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -157,17 +158,28 @@ func warnToStderr(msg string) {
 }
 
 // resolveTimeoutSec 解析最终生效的 HTTP 超时秒数：flag 显式值优先，
-// 未显式时回落 NAZHI_TIMEOUT 等环境变量，均非法（≤0）时回退注册默认 15 秒并告警。
-// 三通道同因同果：flag 非法与 env 非法产出一致（此前 30 秒兜底与 15 秒默认分叉）。
+// 未显式时回落 NAZHI_TIMEOUT 等环境变量，均非法（≤0）时回退该命令自身的
+// flag 注册默认值并告警。三通道同因同果：flag 非法与 env 非法产出一致。
+//
+// 回退值取自 flag 注册默认值而非函数内常量：file upload / download 注册的是
+// 30 秒而业务命令是 15 秒，若固定回退 15，file 命令的用户会在 --help 里读到
+// (default 30) 却被告警告知改成 15 秒。告警文案与实际生效值由同一来源派生，
+// 不可能对用户说谎。
 func resolveTimeoutSec(cmd *cobra.Command, envKey string) int {
-	const defaultTimeout = 15
 	timeoutSec, _ := cmd.Flags().GetInt("timeout")
 	if !flagChanged(cmd, "timeout") {
 		timeoutSec = envInt(envKey, timeoutSec)
 	}
 	if timeoutSec <= 0 {
-		warnToStderr(fmt.Sprintf("warn: timeout 值 %d 无效（flag 或环境变量），使用默认 %d 秒超时\n", timeoutSec, defaultTimeout))
-		return defaultTimeout
+		fallback := cmd.Flags().Lookup("timeout").DefValue
+		secs, err := strconv.Atoi(fallback)
+		if err != nil || secs <= 0 {
+			// 注册值缺失或非法（自定义命令未注册该 flag）：退到全局最小可用值，
+			// 不让非法值流入 client.WithTimeout。
+			secs = 1
+		}
+		warnToStderr(fmt.Sprintf("warn: timeout 值 %d 无效（flag 或环境变量），使用默认 %d 秒超时\n", timeoutSec, secs))
+		return secs
 	}
 	return timeoutSec
 }

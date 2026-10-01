@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -57,5 +58,44 @@ func TestResolveTimeoutSec_ValidPathsUnchanged(t *testing.T) {
 	t.Setenv("NAZHI_TIMEOUT", "45")
 	if got := resolveTimeoutSec(newTimeoutTestCmd("", false), "NAZHI_TIMEOUT"); got != 45 {
 		t.Errorf("合法 env 应生效，实际 %d", got)
+	}
+}
+
+// newTimeoutTestCmdWithDefault 构造注册默认值为 def 的 timeout 命令。
+func newTimeoutTestCmdWithDefault(def int) *cobra.Command {
+	cmd := &cobra.Command{Use: "t"}
+	cmd.Flags().Int("timeout", def, "")
+	return cmd
+}
+
+// TestResolveTimeoutSec_WarningReportsOwnRegisteredDefault 锁定告警文案不得
+// 谎报回退值：文案里的「默认 N 秒」必须是**该命令自身的 flag 注册默认值**，
+// 而不是函数内硬编码的常量。
+//
+// file upload / file download 注册默认值是 30（见其 Flags().Int 调用），
+// 业务命令是 15。若告警固定说 15，file 命令的用户会在 --help 里读到
+// (default 30) 却被告警告知改成 15——同一 flag 两套承诺。
+//
+// 该用例与既有 newTimeoutTestCmd（注册默认 15）构成对照：修复前两者文案相同，
+// 本用例恒绿。
+func TestResolveTimeoutSec_WarningReportsOwnRegisteredDefault(t *testing.T) {
+	t.Setenv("NAZHI_TIMEOUT", "")
+
+	for _, def := range []int{15, 30} {
+		cmd := newTimeoutTestCmdWithDefault(def)
+		_ = cmd.Flags().Set("timeout", "0")
+
+		_, stderr, restore := captureStdio(t)
+		got := resolveTimeoutSec(cmd, "NAZHI_TIMEOUT")
+		restore()
+
+		if got != def {
+			t.Errorf("注册默认 %d 的命令在 flag 非法时应回退 %d，实际 %d", def, def, got)
+		}
+		want := fmt.Sprintf("使用默认 %d 秒超时", def)
+		if !strings.Contains(stderr.String(), want) {
+			t.Errorf("告警应报告该命令自身的注册默认 %d（文案含 %q），实际 stderr=%q",
+				def, want, stderr.String())
+		}
 	}
 }
