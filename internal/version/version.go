@@ -120,4 +120,10 @@ package version
 //	        参数错误统一走 stderr（stdout 只承载成功数据，行为变更，旧脚本需改）；
 //	        写操作命令 --help 兑现「允许键」承诺并按驼峰原样展示；
 //	        limit 裁剪的 JSON 扫描器补齐分支级回归防护；限读注释与常量漂移修正
-var Version = "1.8.0"
+//	1.9.0 — 任务层级收敛与架构深化：
+//	        深模块收敛：task.go 深度统一任务三级选择模型（维度→类别→任务），
+//	        提供 GetTaskCategories 与 GetTaskItems，旧方法保留为兼容别名；
+//	        补齐学生主页近期填报任务接口 GetRecentlyCircleTask（对齐 mainLeft.vue:73）；
+//	        CLI task 新增 categories、items、recent 子命令；
+//	        消除 write_op_runner 伪泛型闭包；CLAUDE.md 核心记忆库深度精简 80%
+var Version = "1.9.0"

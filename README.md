@@ -126,7 +126,10 @@ nazhi
 │   ├── edit                     修改已提交的写实记录
 │   ├── preview                  预览提交/编辑的最终 JSON payload（不调写接口）
 │   ├── dimensions              获取写实维度列表
-│   └── circle-type              获取任务写实元数据
+│   ├── categories              按维度获取写实类别（别名 types）
+│   ├── items                   按类别获取写实任务（别名 tasks）
+│   ├── circle-type              获取任务写实元数据
+│   └── recent                   获取最近提交的写实任务
 ├── self-eval
 │   ├── submit                   提交自我评价
 │   ├── status                   查询评价状态 + 教师评语

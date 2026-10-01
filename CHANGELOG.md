@@ -2,6 +2,26 @@
 
 ## [Unreleased]
 
+## [1.9.0] - 2026-10-02
+
+### 新增
+
+- **任务三级层级深模块收敛（Task Hierarchy Deepening）**：
+  - SDK 层面：`pkg/client/task.go` 深度统一任务三级选择模型（维度→类别→任务），新增 `GetTaskCategories` 与 `GetTaskItems`，旧方法 `GetCircleTypes` 与 `GetCircleTasks` 保留为兼容别名；
+  - 补齐前端唯一真实业务缺口：新增 `GetRecentlyCircleTask`（获取学生近期填报任务，对应 `/api/studentCircleNew/getRecentlyCircleTask`，来自 `mainLeft.vue:73`）；
+  - CLI 层面：`cmd/nazhi/task_metadata.go` 新增 `nazhi task categories`（别名 `types`）、`task items`（别名 `tasks`）、`task recent` 子命令。旧 `nazhi circle types/tasks` 保持透明兼容。
+- **CLI 写操作伪泛型消除与代码收敛**：
+  - `cmd/nazhi/write_op_runner.go` 中的 `taskApplyAddressLevelFlags` 从带动态断言的伪泛型重构为类型 switch 直传，消除 4 处逐字重复的匿名闭包。
+
+### 优化与治理
+
+- **CLAUDE.md 核心记忆库深度精简**：
+  - 文件体积由 77,045 字节精简至 15,339 字节（缩减 80%），彻底根除系统提示词预算截断告警；
+  - 100% 完整保留凭据、69 个前端 Vue 组件业务映射、A–H 核心契约与已证伪假阳性清单。
+- **文档与术语对齐**：
+  - 同步更新 `CONTEXT.md` 任务三级层级与最近任务术语；
+  - 同步更新 `docs/README.md` 功能↔Go源码↔前端源码三方对照表。
+
 ## 第十一轮架构评审的落地修复
 
 本轮对全部模块做架构深化评审（8 路只读侦察 + 4 路反方 critic + 主代理逐条亲读 + 探针与变异验证）。8 条候选进入复核，**1 条定级为已复现缺陷、3 条坐实为清理项、4 条被反方推翻**——这是本项目历史上第一次反方推翻率高于成立率。
