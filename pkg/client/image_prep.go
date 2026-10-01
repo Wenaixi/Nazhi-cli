@@ -137,8 +137,8 @@ scaleCascade:
 // 各格式解码出的动态类型见 image_prep_transparency_guard_test.go。
 //
 // BMP 在解码失败后检测魔术字节，单独给出「请转为 PNG/JPG」的提示。
-// 注意该提示携带的 ErrUnsupportedFormat 未登记进 CLI 哨兵漏斗，
-// 不支持格式会落 default 500 / 退出码 2。
+// 该提示携带的 ErrUnsupportedFormat 与压缩超限的 ErrImageTooLarge 同归参数档
+// （400 / 退出码 3，见 cmd/nazhi 的 mapSentinelToHTTPCode）。
 func decodeImage(path string) (image.Image, error) {
 	f, err := os.Open(path)
 	if err != nil {

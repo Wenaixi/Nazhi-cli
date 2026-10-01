@@ -72,7 +72,12 @@ func printEnvelope(e *envelope.Envelope) {
 func mapSentinelToHTTPCode(err error) int {
 	switch {
 	case errors.Is(err, client.ErrInvalidPayload),
-		errors.Is(err, client.ErrFileTooLarge):
+		errors.Is(err, client.ErrFileTooLarge),
+		// 图片预处理类的本地文件问题：压缩后仍超限、不支持的格式（部分 BMP
+		// 变体）。三者与 ErrInvalidPayload 同属「换张图即可解决」，报 500 会让
+		// 脚本按「服务端故障、可退避重放」处理，对永不成功的请求无限重试。
+		errors.Is(err, client.ErrImageTooLarge),
+		errors.Is(err, client.ErrUnsupportedFormat):
 		return 400
 	// 修订：本地文件系统错误（上传附件不存在/下载路径不可写）由 SDK 侧包
 	// ErrInvalidPayload 哨兵归 400/exit3（见 file.go/image_prep.go）。
