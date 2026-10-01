@@ -4,6 +4,8 @@
 
 ## [1.9.0] - 2026-10-02
 
+发布链接：[v1.9.0](https://github.com/Wenaixi/nazhi-cli/releases/tag/v1.9.0)
+
 ### 新增
 
 - **任务三级层级深模块收敛（Task Hierarchy Deepening）**：
