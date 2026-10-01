@@ -231,19 +231,21 @@ func TestUploadFile_NoAuthHeaders(t *testing.T) {
 	t.Logf("✓ UploadFile 正确未发送任何鉴权 Header（X-Auth-Token/Authorization/Cookie）")
 }
 
-// image_prep_break_test.go 通过 AST 静态扫描锁定修复契约：
-// image_prep.go 缩放级联循环不能 `continue` 跳过 `current = resized`。
-// 历史 bug：image_prep.go 缩放级联 `for _, scale := range scaleFactors`
-// 内 `if err != nil { continue }` 跳过 `current = resized`，下一轮用
-// 未更新的 current 计算 w/h → 同一尺寸重复 encodeJPEG 必然同样失败 →
-// 浪费 1-7 轮 CPU 后才 break 返回 ErrImageTooLarge。
-// 修复：`continue` → `break` + logDebug（encodeJPEG 内部错误重试无意义）。
-// 测试策略：AST 扫描，定位 scaleFactors range 循环，递归查找 continue
-// 语句（注释里的字面量"continue"不会被 AST 误判）。
-
-// TestImagePrep_ScaleCascadeNoContinue AST 扫描 image_prep.go，
-// 验证 scaleCascade 不再使用 for-range 循环（已改为单次缩放）。
-func TestImagePrep_ScaleCascadeNoContinue(t *testing.T) {
+// 缩放级联的守卫。历史背景：该处曾是 for-range 累乘循环，循环内
+// `if err != nil { continue }` 跳过 `current = resized`，下一轮用未更新的
+// current 计算 w/h，导致同尺寸重复 encodeJPEG 浪费 1-7 轮 CPU。
+// 现已改为单次缩放，以下两条守卫分别锁定「无循环」与「错误分支有 logDebug」。
+//
+// TestImagePrep_ScaleCascadeHasNoRangeLoop 锁定缩放级联不使用 for-range 循环。
+//
+// 真实约束是「单次缩放取代 7 轮累乘」（0.7^7 ≈ 0.082，避免 4K 图 ~200MB
+// 临时内存），所以降级链里任何 range 循环都是回归——无论它 range 什么变量。
+//
+// 旧实现断言的是「不存在对 scaleFactors/getScaleFactors 的 range 循环」，
+// 而这两个标识符在生产代码中出现 0 次（仅存于本测试与 CHANGELOG），实际
+// 锁的是一段历史而非性质：注入 `for range scaleFactors` 会红，注入
+// `for range []float64{0.7, 0.5}` 这类语义等价但异名的循环则静默通过。
+func TestImagePrep_ScaleCascadeHasNoRangeLoop(t *testing.T) {
 	fset := token.NewFileSet()
 	f, err := parser.ParseFile(fset, "image_prep.go", nil, 0)
 	if err != nil {
@@ -262,53 +264,146 @@ func TestImagePrep_ScaleCascadeNoContinue(t *testing.T) {
 		t.Fatal("找不到 prepareImageForUpload 函数")
 	}
 
-	// 2. 确认 scaleCascade 标签后没有 for-range 循环
-	var hasRangeLoop bool
+	// 2. 从 scaleCascade 标签起扫描到函数末尾，该区间不得含 range 循环。
+	//
+	// 区间以标签（LabeledStmt）为起点而非「全函数无 range」：decodeImage 之类
+	// 的无关循环不该被这条守卫牵连，而降级链内任何循环都要拦住。
+	// 区间判定用位置而非语句嵌套：Go AST 里 LabeledStmt.Stmt 是紧邻的那条
+	// 语句（实测为 *ast.AssignStmt）而非块，标签之后的兄弟语句都是平级的。
+	labelPos, found := token.NoPos, false
 	ast.Inspect(prepFn.Body, func(n ast.Node) bool {
-		if rs, ok := n.(*ast.RangeStmt); ok {
-			// 检查 range 的目标不是 scaleFactors（防止回归）
-			if id, ok := rs.X.(*ast.Ident); ok && (id.Name == "scaleFactors" || id.Name == "getScaleFactors") {
-				hasRangeLoop = true
-				return false
-			}
+		ls, ok := n.(*ast.LabeledStmt)
+		if !ok || ls.Label.Name != "scaleCascade" {
+			return true
+		}
+		labelPos, found = ls.Pos(), true
+		return false
+	})
+	if !found {
+		t.Fatal("找不到 scaleCascade 标签；降级链结构已变，本守卫判据需同步更新")
+	}
+
+	hasRangeLoop := false
+	ast.Inspect(prepFn.Body, func(n ast.Node) bool {
+		if _, ok := n.(*ast.RangeStmt); ok && n.Pos() > labelPos {
+			hasRangeLoop = true
+			return false
 		}
 		return true
 	})
 	if hasRangeLoop {
-		t.Error("finding 1/2 回归：scaleCascade 应使用单次缩放而非 for-range 循环")
+		t.Error("缩放级联应使用单次缩放（0.082 一次到位）而非 for-range 累乘循环；" +
+			"累乘会让 4K 图产生 ~200MB 临时内存")
 	}
 }
 
-// TestImagePrep_ScaleCascadeHasLogDebug 验证修复契约：
-// 缩放级联循环的错误分支必须配 logDebug 调用。
-// 用字符串子串匹配（仅在错误处理块注释 anchor 范围内），
-// 不易触发字面量误判：定位 `if err != nil {` 锚点 + 下一 break 之间的内容。
-func TestImagePrep_ScaleCascadeHasLogDebug(t *testing.T) {
-	src, err := readSource("image_prep.go")
+// TestImagePrep_ScaleCascadeEncodeErrorBranchLogs 锁定缩放级联最终编码失败
+// 分支必须配 logDebug 调用并 return。
+//
+// 旧实现用「锚点后 600 字符窗口 + 子串包含」断言，窗口跨过 if 块覆盖了
+// 后续两个 return 与函数末尾——实测窗口内 return 出现 3 次，三条断言中有两条
+// 恒真：删掉错误分支的 return 不会被抓到，把 logDebug 移出错误分支（如挪进
+// defer）也不会被抓。
+//
+// 现按 AST 精确定位「encodeJPEG(current, 40) 之后紧邻的 if err != nil 块」，
+// 断言其 Body 内的语句里确实含 logDebug 调用与 return 语句。
+func TestImagePrep_ScaleCascadeEncodeErrorBranchLogs(t *testing.T) {
+	fset := token.NewFileSet()
+	f, err := parser.ParseFile(fset, "image_prep.go", nil, 0)
 	if err != nil {
-		t.Fatalf("读 image_prep.go: %v", err)
-	}
-	body := string(src)
-
-	// 锚点：encodeJPEG 调用之后紧随的 `if err != nil {` 错误处理块。
-	// 源码用两步式（先 data, err = encodeJPEG(...)，再单独 if err != nil），
-	// 不是 if-init 复合形式。
-	anchor := "data, err = encodeJPEG(current, 40)"
-	idx := strings.Index(body, anchor)
-	if idx < 0 {
-		t.Fatalf("找不到 %q 锚点，源码结构可能改了", anchor)
-	}
-	// 取该 if 块后续 600 字符（足够看到 break + logDebug）
-	block := body[idx:]
-	if len(block) > 600 {
-		block = block[:600]
+		t.Fatalf("parse image_prep.go: %v", err)
 	}
 
-	if !strings.Contains(block, "return") {
-		t.Errorf("encodeJPEG 失败分支必须含 return，实际块:\n%s", block)
+	var prepFn *ast.FuncDecl
+	for _, decl := range f.Decls {
+		fd, ok := decl.(*ast.FuncDecl)
+		if ok && fd.Name.Name == "prepareImageForUpload" {
+			prepFn = fd
+			break
+		}
 	}
-	if !strings.Contains(block, "logDebug") {
-		t.Errorf("encodeJPEG 失败 break 前应 logDebug 记录原因，实际块:\n%s", block)
+	if prepFn == nil {
+		t.Fatal("找不到 prepareImageForUpload 函数")
+	}
+
+	// 定位 encodeJPEG(current, 40) 调用点，取其之后第一个 IfStmt。
+	// 该调用是级联末档（质量 40），参数含 current 以排除 q92/q80 两处调用。
+	var encodePos token.Pos
+	var guard *ast.IfStmt
+	found := false
+	ast.Inspect(prepFn.Body, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok || calleeName(call) != "encodeJPEG" || !hasIdentArg(call, "current") {
+			return true
+		}
+		encodePos, found = call.End(), true
+		return false
+	})
+	if !found {
+		t.Fatal("找不到 encodeJPEG(current, ...) 调用，级联末档结构可能已变")
+	}
+
+	ast.Inspect(prepFn.Body, func(n ast.Node) bool {
+		if guard != nil {
+			return false
+		}
+		if ifs, ok := n.(*ast.IfStmt); ok && ifs.Pos() > encodePos {
+			guard = ifs
+			return false
+		}
+		return true
+	})
+	// 正向断言：判据失效时必须失败而非静默通过。
+	if guard == nil {
+		t.Fatal("encodeJPEG(current, ...) 之后未找到 IfStmt；守卫判据已失效")
+	}
+
+	var hasLogDebug, hasReturn bool
+	ast.Inspect(guard.Body, func(n ast.Node) bool {
+		switch node := n.(type) {
+		case *ast.CallExpr:
+			if calleeName(node) == "logDebug" {
+				hasLogDebug = true
+			}
+		case *ast.ReturnStmt:
+			hasReturn = true
+		}
+		return true
+	})
+
+	if !hasLogDebug {
+		t.Error("末档 encodeJPEG 失败的 if 块内必须有 logDebug 调用（记录失败原因）")
+	}
+	if !hasReturn {
+		t.Error("末档 encodeJPEG 失败的 if 块内必须有 return（不得静默继续到下一档）")
+	}
+}
+
+// hasIdentArg 判断调用实参中是否出现指定标识符。
+func hasIdentArg(call *ast.CallExpr, name string) bool {
+	for _, a := range call.Args {
+		if id, ok := a.(*ast.Ident); ok && id.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+// calleeName 返回被调用者的名字，兼容包级函数（*ast.Ident）与
+// 方法/字段调用（*ast.SelectorExpr）两种形态。
+//
+// 形态经实测 dump 确认：encodeJPEG 是包级函数，call.Fun 为 *ast.Ident；
+// c.logDebug 是方法，call.Fun 为 *ast.SelectorExpr。只认其中一种会让守卫
+// 失效——本轮改写时先写成只认 SelectorExpr，测试当场报「找不到 encodeJPEG
+// 调用」而非静默通过。
+func calleeName(call *ast.CallExpr) string {
+	switch fn := call.Fun.(type) {
+	case *ast.Ident:
+		return fn.Name
+	case *ast.SelectorExpr:
+		return fn.Sel.Name
+	default:
+		return ""
 	}
 }
 
