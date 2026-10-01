@@ -173,7 +173,7 @@ func (c *Client) Login(ctx context.Context, req types.LoginRequest) (*types.Logi
 		"password": md5Hex(req.Password),
 	}
 
-	httpResp, err := c.rawDoWithResp(ctx, http.MethodPost,
+	httpResp, err := c.do(ctx, http.MethodPost,
 		c.ssoURL("/uiActivityLogin/studentLogin", nil),
 		loginBody, c.ssoHeaders(), "",
 	)

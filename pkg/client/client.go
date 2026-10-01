@@ -411,12 +411,13 @@ func (c *Client) LogInfoForTest(ctx context.Context, format string, args ...any)
 
 // ─── 资源释放 ───
 
-// Enabled 暴露 logger 的 Enabled 供测试校验级别（不影响生产行为）。
+// Enabled 暴露 logger 的级别判定，供跨包黑盒测试校验（不影响生产行为）。
+//
+// 委托给私有 logEnabled 而非自行实现：两者本是同一份知识，写两遍必然漂移
+// ——原实现漏掉 logEnabled 的 nil ctx 归一分支，使 ctx 为 nil 时
+// 「级别守卫通过」与「实际会输出」不等价。现由 logEnabled 单点持有该判定。
 func (c *Client) Enabled(ctx context.Context, lvl slog.Level) bool {
-	if c.logger == nil {
-		return false
-	}
-	return c.logger.Enabled(ctx, lvl)
+	return c.logEnabled(ctx, lvl)
 }
 
 // Close 释放 Client 持有的资源：

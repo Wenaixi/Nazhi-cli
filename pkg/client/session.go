@@ -161,7 +161,7 @@ func (c *Client) doGetMenu(ctx context.Context, menuURL string, baseHeaders map[
 	}
 	hdr["Referer"] = referer
 
-	resp, err := c.rawDoWithResp(ctx, http.MethodGet, menuURL, nil, hdr, "")
+	resp, err := c.do(ctx, http.MethodGet, menuURL, nil, hdr, "")
 	if err != nil {
 		return fmt.Errorf("ActivateSession %s（getMenu）失败: %w", stepLabel, err)
 	}

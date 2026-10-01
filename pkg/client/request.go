@@ -371,7 +371,12 @@ func (c *Client) logRequestHeaders(ctx context.Context, req *http.Request) {
 	}
 }
 
-// do 构建请求、打印调试日志并执行 HTTP 调用，是 httpDo 和 rawDoWithResp 共享的核心。
+// do 构建请求、打印调试日志并执行 HTTP 调用，是 httpDo 与各需自行处理
+// 响应体的调用点共享的核心。
+//
+// **Body 所有权**：成功返回时响应体尚未关闭，由调用方负责
+// drain+close（让 net/http 把连接归还 keep-alive 池）。只读一遍并需要
+// []byte 的路径走 httpDo 或 doBizGet，不要直接调本函数。
 func (c *Client) do(ctx context.Context, method, url string, body any, headers map[string]string, contentType string) (*http.Response, error) {
 	req, err := c.buildRequest(ctx, method, url, body, headers, contentType)
 	if err != nil {
@@ -449,7 +454,7 @@ func (c *Client) httpDo(ctx context.Context, method, url string, body any, heade
 }
 
 // maxResponseBodySize 是 httpDo 读取响应体的上限。
-// 正常平台业务响应 <1KB（见 c.do 注释）；写实公示全量 JSON 实测超 1MB（2026-08-27
+// 多数单对象业务响应远小于 1KB；写实公示全量 JSON 实测超 1MB（2026-08-27
 // 事故：福清一中全班公示 getStudentCircle 单页 500 条 + 图片 URLs 超过 1MB，SDK 在
 // httpDo 阶段直接拒绝 → 公示 Tab「加载中…」永不结束）。4MB 覆盖该场景仍保留防
 // 异常/恶意服务端内存放大的安全上限。
@@ -534,21 +539,12 @@ func readErrorSnippet(resp *http.Response, defaultSentinel error) ([]byte, error
 	return errBody, classifyHTTPStatus(resp.StatusCode, defaultSentinel)
 }
 
-// rawDoWithResp 执行请求并返回 *http.Response（调用者负责关闭 Body）。
-func (c *Client) rawDoWithResp(ctx context.Context, method, url string, body any, headers map[string]string, contentType string) (*http.Response, error) {
-	resp, err := c.do(ctx, method, url, body, headers, contentType)
-	if err != nil {
-		return nil, err
-	}
-	return resp, nil
-}
-
 // ─── 业务侧请求辅助 ───
 
 // doBizGet 是业务侧"GET + drain + close + readall + status check"的标准 helper。
 //
 // 封装以下 4 步, 消除 session.go / auth.go 中的 boilerplate:
-//  1. rawDoWithResp 发起请求 (返回 *http.Response, 调用方负责 body)
+//  1. do 发起请求 (返回 *http.Response, 调用方负责 body)
 //  2. defer drain+close (让 net/http 把连接归还 keep-alive 池)
 //  3. io.ReadAll 读 body
 //  4. 检查 status 200, 非 200 返回包装错误
@@ -559,9 +555,9 @@ func (c *Client) rawDoWithResp(ctx context.Context, method, url string, body any
 //   - body 读取失败 → 包装为 ErrNetwork
 //
 // 注意: 这是"一次性消费" helper, 调用方拿到 []byte 后 body 已关闭。
-// 如需保留 body 在函数返回后继续使用, 请直接用 rawDoWithResp。
+// 如需保留 body 在函数返回后继续使用, 请直接用 do。
 func (c *Client) doBizGet(ctx context.Context, url string, headers map[string]string) ([]byte, error) {
-	resp, err := c.rawDoWithResp(ctx, http.MethodGet, url, nil, headers, "")
+	resp, err := c.do(ctx, http.MethodGet, url, nil, headers, "")
 	if err != nil {
 		return nil, err
 	}
