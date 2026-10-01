@@ -6,7 +6,6 @@ package client
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -400,8 +399,11 @@ func (c *Client) logDebugCtx(ctx context.Context, format string, args ...any) {
 }
 
 // LogDebugForTest 暴露给白盒测试的 debug 入口（携带 ctx）。
+//
+// 委托给私有 logDebugCtx 而非自行实现：两者本是同一份知识，写两遍必然漂移
+// ——与上面 Enabled 委托 logEnabled 同理。改这一处时另一处必须同步。
 func (c *Client) LogDebugForTest(ctx context.Context, format string, args ...any) {
-	c.logWithLevel(ctx, slog.LevelDebug, format, args...)
+	c.logDebugCtx(ctx, format, args...)
 }
 
 // LogInfoForTest 暴露给白盒测试的 info 入口（携带 ctx）。
@@ -423,8 +425,13 @@ func (c *Client) Enabled(ctx context.Context, lvl slog.Level) bool {
 // Close 释放 Client 持有的资源：
 //   - HTTP Transport 的空闲 keep-alive 连接
 //   - sessionManager backoff 状态
+//
+// 两个动作都不会失败，故恒返回 nil。签名保留 error 是因为调用方
+// （cmd/nazhi 的 closeInLIFO）按「可能失败」聚合而设计，公开 SDK 不宜因
+// 实现细节变更签名。v1.7.0 移除验证码识别器时这里曾有第三个动作
+// （c.ocr.Close）并把错误 append 进 errs，那次移除带走了唯一的 append 点
+// 却留下 errs 与 errors.Join 分支——两者此后恒为死路径，本次一并清除。
 func (c *Client) Close() error {
-	var errs []error
 	if c.http != nil {
 		if t, ok := c.http.Transport.(*http.Transport); ok && t != nil {
 			t.CloseIdleConnections()
@@ -432,9 +439,6 @@ func (c *Client) Close() error {
 	}
 	if c.sm != nil {
 		c.sm.Reset()
-	}
-	if len(errs) > 0 {
-		return errors.Join(errs...)
 	}
 	return nil
 }
