@@ -127,11 +127,18 @@ scaleCascade:
 	return nil, "", ErrImageTooLarge
 }
 
-// decodeImage 使用 stdlib image.Decode 解码，自动通过魔术字节派发到
-// 已注册的格式（jpeg/png/gif/webp）。
+// decodeImage 用 imaging.Decode 解码（内部即 image.Decode + EXIF 自动旋转），
+// 按魔术字节派发到已注册的格式。
 //
-// 不再需要手动 switch — image.Decode 通过各包的 init() 注册的魔术字节
-// 自动匹配。BMP 在解码失败后检测魔术字节单独报错。
+// 在线可达的格式来自依赖树而非本文件 import：本包显式注册 bmp/webp，
+// 标准库 gif/jpeg/png，**另有 TIFF 经 imaging 的普通导入传递自注册**
+// （golang.org/x/image/tiff 的 init 调 image.RegisterFormat，进程全局生效）。
+// 故此处不逐一枚举格式——枚举清单一旦落后于依赖树就会失实。
+// 各格式解码出的动态类型见 image_prep_transparency_guard_test.go。
+//
+// BMP 在解码失败后检测魔术字节，单独给出「请转为 PNG/JPG」的提示。
+// 注意该提示携带的 ErrUnsupportedFormat 未登记进 CLI 哨兵漏斗，
+// 不支持格式会落 default 500 / 退出码 2。
 func decodeImage(path string) (image.Image, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -162,8 +169,19 @@ func decodeImage(path string) (image.Image, error) {
 
 // hasTransparency 检测图片是否含透明通道。
 //
-// 将 *image.Paletted 独立 if 合并到 type switch 中，
-// 消除独立的 if 语句，使透明检测逻辑更紧凑。
+// **本枚举表必须与「本包实际可解码出的带 alpha 类型」保持同步**：漏掉一种
+// 类型，该类型图片的透明区会被 jpeg.Encode 丢弃并落为黑底。
+//
+// 这不是理论风险——commit c46fbda 就是在补 NYCbCrA 分支（有损 WebP
+// VP8+ALPH 的解码产物），该缺陷曾随 v1.5.1 之前的版本上线。
+//
+// 判据来源是 Go 的 image.Decode 按**内容**决定返回类型（go doc image/png
+// 明写「The type of Image returned depends on the PNG contents」），
+// 这是实现细节而非稳定契约。image_prep_transparency_guard_test.go 以运行时
+// 解码真实字节锁定该表的完备性，依赖升级引入新类型时会变红。
+//
+// 只列带 alpha 槽的类型：Gray/Gray16/YCbCr/CMYK 无 alpha 通道，命中与否都
+// 不影响正确性，纳入会让不透明图片也白做一次全图合成。
 func hasTransparency(img image.Image) bool {
 	switch img.(type) {
 	case *image.NRGBA, *image.NRGBA64, *image.RGBA, *image.RGBA64:
