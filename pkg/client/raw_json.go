@@ -223,23 +223,9 @@ type rawResult struct {
 // 用 first 标志控制逗号，避免 page1 为空数组时产生 leading comma 非法 JSON（[,{...}]）。
 // 对齐 assembleCirclesLimitJSON 的拼接策略。
 func assembleCirclesJSON(raw1 []byte, results []rawResult, totalPage int, partialErr error) (json.RawMessage, error) {
-	// totalPage 参与预分配乘法，超钳制值会放大分配或整数溢出。
-	if totalPage > maxTotalPage {
-		totalPage = maxTotalPage
-	}
-	// 预分配容量钳制到固定上界——len(raw1)×totalPage 可达 40GB，
-	// 攻陷服务端可借首页大响应+虚高 totalNum 驱动单请求 OOM。
-	// 改为按已有页实际内容求和精确预分配。
-	// 此前估算 capHint = 页数×首页字节，偏小则触发 bytes.Buffer 倍增扩容的
-	// 多次整块拷贝。各页实际长度已知（results），求和即精确容量；上界仍由
-	// maxAssembleBuffer 钳制（防攻陷服务端借大响应×虚高页数放大分配）。
-	total := len(raw1) + 2
-	for pn := 2; pn <= totalPage; pn++ {
-		total += len(results[pn].raw) + 1
-	}
-	if total > maxAssembleBuffer {
-		total = maxAssembleBuffer
-	}
+	// 预分配容量由 assembleCapacity 单点计算并施加两道闸（页数闸 +
+	// maxAssembleBuffer 字节闸），理由见该函数注释。
+	total := assembleCapacity(raw1, results, totalPage)
 	buf := bytes.NewBuffer(make([]byte, 0, total))
 	buf.WriteByte('[')
 	first := true
@@ -269,6 +255,38 @@ func assembleCirclesJSON(raw1 []byte, results []rawResult, totalPage int, partia
 		return json.RawMessage(trimArrayToCurrent(buf.Bytes())), partialErr
 	}
 	return buf.Bytes(), nil
+}
+
+// assembleCapacity 计算 assembleCirclesJSON 的预分配容量，是两道容量闸的
+// 唯一实现处。
+//
+// 两道闸依次施加：
+//   - 页数闸：totalPage 超 maxTotalPage 会放大下面的求和并整数溢出，须先钳制。
+//     totalPage 来自服务端声明，攻陷服务端可借虚高 totalNum 驱动巨量分配。
+//   - 字节闸：求和结果超 maxAssembleBuffer 时钳到上界。各页长度已知，求和
+//     即精确容量（此前估算 len(raw1)×totalPage 偏小，会触发 bytes.Buffer
+//     倍增扩容的多次整块拷贝）。
+//
+// 提取为纯函数而非留在调用点：它是纯算术，输入全是已知长度，不发请求也不分配。
+// 留在调用点时「容量被钳到上界」只能靠构造超大输入观察，而实测本机连
+// make(40GB) 都能分配成功（虚拟内存），这类测试既慢又不可靠；抽出来后可直接
+// 断言返回值，且删掉任一道闸断言即变红。
+//
+// 页号越界不做防护：调用方保证 results 长度与 totalPage 同步。相邻两条装配
+// 函数写 pn < len(results) 守卫是因为它们被当预算扫描器使用、测试会刻意传
+// 越界页号——本函数无此用法。
+func assembleCapacity(raw1 []byte, results []rawResult, totalPage int) int {
+	if totalPage > maxTotalPage {
+		totalPage = maxTotalPage
+	}
+	total := len(raw1) + 2
+	for pn := 2; pn <= totalPage; pn++ {
+		total += len(results[pn].raw) + 1
+	}
+	if total > maxAssembleBuffer {
+		total = maxAssembleBuffer
+	}
+	return total
 }
 
 // getCirclesJSON 是各类型写实记录全量拉取的通用实现。
