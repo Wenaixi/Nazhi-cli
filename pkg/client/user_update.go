@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"sort"
+	"strings"
 
 	"github.com/Wenaixi/nazhi-cli/pkg/types"
 )
@@ -44,6 +46,21 @@ var idCardTypeMap = map[string]int{
 	"台湾居民来往大陆通行证": 5,
 	"护照":          6,
 	"香港永久性居民身份证":  7,
+}
+
+// supportedValues 把枚举表的中文键按 UTF-8 字节序拼接为「甲/乙/丙」形态，
+// 供拒绝分支的错误文案派生合法值清单。
+//
+// 用户（与读 --help 的脚本、AI 代理）拒绝后唯一的排错线索就是这条文案：
+// --help 与 payload 允许键清单都只列键名、不列取值域。清单由表派生而非手抄
+// 字面量，避免出现第二份真相源后与表脱节。
+func supportedValues(m map[string]int) string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return strings.Join(keys, "/")
 }
 
 // UpdateMyInfo 更新当前用户个人信息。
@@ -147,7 +164,7 @@ func (c *Client) UpdateMyInfoStructured(ctx context.Context, token string, input
 	if input.GenderName != "" {
 		code, ok := genderMap[input.GenderName]
 		if !ok {
-			return fmt.Errorf("%w: 不支持的性别值 %q", ErrInvalidPayload, input.GenderName)
+			return fmt.Errorf("%w: 不支持的性别值 %q（支持：%s）", ErrInvalidPayload, input.GenderName, supportedValues(genderMap))
 		}
 		updates["gender"] = code
 	}
@@ -156,7 +173,7 @@ func (c *Client) UpdateMyInfoStructured(ctx context.Context, token string, input
 	if input.YouthLeague != "" {
 		code, ok := youthLeagueMap[input.YouthLeague]
 		if !ok {
-			return fmt.Errorf("%w: 不支持的团员值 %q", ErrInvalidPayload, input.YouthLeague)
+			return fmt.Errorf("%w: 不支持的团员值 %q（支持：%s）", ErrInvalidPayload, input.YouthLeague, supportedValues(youthLeagueMap))
 		}
 		updates["youthLeagueFlag"] = code
 	}
@@ -165,7 +182,7 @@ func (c *Client) UpdateMyInfoStructured(ctx context.Context, token string, input
 	if input.NationName != "" {
 		code, ok := nationMap[input.NationName]
 		if !ok {
-			return fmt.Errorf("%w: 不支持的民族值 %q", ErrInvalidPayload, input.NationName)
+			return fmt.Errorf("%w: 不支持的民族值 %q（支持：%s）", ErrInvalidPayload, input.NationName, supportedValues(nationMap))
 		}
 		updates["nation"] = code
 	}
@@ -174,7 +191,7 @@ func (c *Client) UpdateMyInfoStructured(ctx context.Context, token string, input
 	if input.IdCardType != "" {
 		code, ok := idCardTypeMap[input.IdCardType]
 		if !ok {
-			return fmt.Errorf("%w: 不支持的证件类型值 %q", ErrInvalidPayload, input.IdCardType)
+			return fmt.Errorf("%w: 不支持的证件类型值 %q（支持：%s）", ErrInvalidPayload, input.IdCardType, supportedValues(idCardTypeMap))
 		}
 		updates["idType"] = code
 	}

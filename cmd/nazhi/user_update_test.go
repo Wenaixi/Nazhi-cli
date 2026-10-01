@@ -141,16 +141,21 @@ func TestUserUpdateCmd_InvalidGender(t *testing.T) {
 	restore()
 	stderr := stderrBuf.String()
 
-	// 参数错误：printError 走 5xx 或业务错误；至少不能成功（exit 0 + Empty）
-	// UpdateMyInfoStructured 返回 ErrInvalidPayload
-	if pendingExitCode.Load() == 0 && !strings.Contains(stderr, "error") {
-		// 若 exit 仍为 0，至少 stderr 应有错误
-		if !strings.Contains(stderr, "不支持") && !strings.Contains(stderr, "Invalid") && !strings.Contains(stderr, "error") {
-			t.Fatalf("非法 genderName 应失败，stderr=%q exit=%d", stderr, pendingExitCode.Load())
-		}
+	// 参数错误归 400 / 退出码 3，且 stderr 必须含合法值清单——用户读到拒绝后
+	// 唯一的排错线索就是这条文案（--help 与允许键清单都只列键名、不列取值域）。
+	//
+	// 三条断言无条件执行：此前它们被包在
+	// `if pendingExitCode.Load() == 0 && !strings.Contains(stderr, "error")` 里，
+	// 而正常路径 exit=3 使外层恒假，内层「应含不支持字样」对任何 stderr 恒绿。
+	if pendingExitCode.Load() != 3 {
+		t.Errorf("非法 genderName 应为参数错误退出码 3，实际 %d；stderr=%q", pendingExitCode.Load(), stderr)
 	}
-	if pendingExitCode.Load() == 0 {
-		t.Errorf("非法 genderName 应设置 pendingExitCode≠0，实际 0；stderr=%q", stderr)
+	if !strings.Contains(stderr, "不支持") {
+		t.Errorf("非法 genderName 的错误文案应说明「不支持」，实际 stderr=%q", stderr)
+	}
+	if !strings.Contains(stderr, "女/男") {
+		// 清单按 UTF-8 字节序排列（sort.Strings 的既定语义），非拼音序。
+		t.Errorf("错误文案应列出性别合法值清单「女/男」供用户排错，实际 stderr=%q", stderr)
 	}
 }
 
