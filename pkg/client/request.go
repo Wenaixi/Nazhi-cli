@@ -436,11 +436,17 @@ func (c *Client) httpDo(ctx context.Context, method, url string, body any, heade
 		return nil, err
 	}
 
-	// 先判级别再求值。logx.RedactBodyThenTruncate 对 4MB 响应体会
-	// 先 string(body) 分配等大字符串再跑两遍全量正则，而默认 LevelWarn 下
-	// 这条 Info 日志永不输出——守卫把这份浪费归零。
+	// 先判级别再求值：摘要对 4MB 响应体会先 string(body) 分配等大字符串
+	// 再跑两遍全量正则，而默认 LevelWarn 下这条日志永不输出——守卫把这份
+	// 浪费归零。
+	//
+	// 摘要走 RedactSnippet 而非 RedactBodyThenTruncate：后者只做「先脱敏再
+	// 截断」，当响应体自身在敏感值中间被截断时（服务端/反向代理超时是常见
+	// 来源），脱敏正则因缺闭合引号整体失配，明文直接进入日志。RedactSnippet
+	// 内的 clipPrefixWindow 专门收口该形态。长度由 logx 单点持有，此处不再
+	// 传字面量。
 	if lvl := levelForStatus(resp.StatusCode); c.logEnabled(ctx, lvl) {
-		c.logWithLevel(ctx, lvl, "← %d %s (%d bytes) body=%s", resp.StatusCode, logx.RedactBody(url), len(respBytes), logx.RedactBodyThenTruncate(respBytes, 100))
+		c.logWithLevel(ctx, lvl, "← %d %s (%d bytes) body=%s", resp.StatusCode, logx.RedactBody(url), len(respBytes), logx.RedactSnippet(respBytes))
 	}
 
 	// 非 2xx：返回 sentinel，不把 body 当作成功 JSON 交给上层解码。
