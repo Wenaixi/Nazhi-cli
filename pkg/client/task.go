@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"math"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -554,4 +555,41 @@ func (c *Client) PreviewEditPayload(ctx context.Context, token string, input typ
 // SDK 高级用户使用；CLI 经 `nazhi task dimensions` 命令调用（task_metadata.go）。
 func (c *Client) GetDimensions(ctx context.Context, token string) ([]types.Dimension, error) {
 	return c.fetchDimensions(ctx, token, "GetDimensions")
+}
+
+// GetTaskCategories 获取指定维度下的写实类别（对齐前端 managementRightTop.vue:817）。
+// GET /api/studentCircleNew/getCircleType?dimensionId=&pid=
+// pid 为空时省略 &pid=，与普校前端（`?dimensionId=`+e.id）一致；
+// 非空时经 url.QueryEscape，避免 &/= 等字符破坏查询串。
+func (c *Client) GetTaskCategories(ctx context.Context, token string, dimensionID int64, pid string) ([]map[string]any, error) {
+	path := "/api/studentCircleNew/getCircleType?dimensionId=" + strconv.FormatInt(dimensionID, 10)
+	if pid != "" {
+		path += "&pid=" + url.QueryEscape(pid)
+	}
+	return c.fetchMapList(ctx, token, "GetCircleTypes", path)
+}
+
+// GetCircleTypes 为 GetTaskCategories 的向后兼容别名。
+func (c *Client) GetCircleTypes(ctx context.Context, token string, dimensionID int64, pid string) ([]map[string]any, error) {
+	return c.GetTaskCategories(ctx, token, dimensionID, pid)
+}
+
+// GetTaskItems 获取指定类别下的写实任务（对齐前端 managementRightTop.vue:869）。
+// GET /api/studentCircleNew/getCircleTask?typeId=
+func (c *Client) GetTaskItems(ctx context.Context, token string, typeID int64) ([]map[string]any, error) {
+	path := "/api/studentCircleNew/getCircleTask?typeId=" + strconv.FormatInt(typeID, 10)
+	return c.fetchMapList(ctx, token, "GetCircleTasks", path)
+}
+
+// GetCircleTasks 为 GetTaskItems 的向后兼容别名。
+func (c *Client) GetCircleTasks(ctx context.Context, token string, typeID int64) ([]map[string]any, error) {
+	return c.GetTaskItems(ctx, token, typeID)
+}
+
+// GetRecentlyCircleTask 获取学生最近提交的写实任务（对齐前端 mainLeft.vue:73）。
+// GET /api/studentCircleNew/getRecentlyCircleTask
+// 返回当前学生最近填报的写实任务列表（含 id, name, scopeTypeName, circleTaskStatus 等）。
+func (c *Client) GetRecentlyCircleTask(ctx context.Context, token string) ([]map[string]any, error) {
+	const path = "/api/studentCircleNew/getRecentlyCircleTask"
+	return c.fetchMapList(ctx, token, "GetRecentlyCircleTask", path)
 }

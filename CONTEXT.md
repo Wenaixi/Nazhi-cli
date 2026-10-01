@@ -13,11 +13,14 @@ _Avoid_：实践记录、活动记录、投稿
 **任务**：写实所挂靠的评价维度项，由任务名称、维度、类别三级构成。
 _Avoid_：活动、项目、指标
 
-**维度 / 类别 / 任务**：任务的三级选择结构，最细粒度才是可提交写实的任务。
+**维度 / 类别 / 任务**：任务的三级选择结构，最细粒度才是可提交写实的任务。统一定义于 Task 模块（SDK `GetDimensions` → `GetTaskCategories` → `GetTaskItems`，CLI `task dimensions` → `task categories` → `task items`）。
 _Avoid_：用「活动」指代任一层级
 
-**任务元数据**：随任务一同返回的、描述该任务提交规则的辅助信息，含任务描述、是否必交图片、建议时长。
+**任务元数据**：随任务一同返回的、描述该任务提交规则的辅助信息，含任务描述、是否必交图片、建议时长（SDK `GetCircleTypeByTaskID`，CLI `task circle-type`）。
 _Avoid_：任务详情、任务配置
+
+**最近任务**：学生主页展示的当前近期填报任务项，用于快速回填与跳转（SDK `GetRecentlyCircleTask`，CLI `task recent`）。
+_Avoid_：历史任务、写实列表
 
 **活动类型**：按任务类型决定的写实专属字段组，共十四类，覆盖活动项目、学科竞赛、体育项目、劳动能力等。
 _Avoid_：写实类型、targetType（这是接口字段名，不是业务词）

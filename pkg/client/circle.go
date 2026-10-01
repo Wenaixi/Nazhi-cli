@@ -3,7 +3,6 @@ package client
 import (
 	"context"
 	"net/http"
-	"net/url"
 	"strconv"
 
 	"github.com/Wenaixi/nazhi-cli/pkg/types"
@@ -66,27 +65,6 @@ func (c *Client) AddCircleComment(ctx context.Context, token string, circleID in
 func (c *Client) SetCircleLike(ctx context.Context, token string, circleID int64) error {
 	path := "/api/studentCircleNew/setCircleLikeById?circleId=" + strconv.FormatInt(circleID, 10)
 	return c.doBizVoid(ctx, token, "SetCircleLike", path, http.MethodGet, nil)
-}
-
-// GetCircleTypes 获取指定维度下的写实类别。
-// GET /api/studentCircleNew/getCircleType?dimensionId=&pid=
-// pid 为空时省略 &pid=，与普校前端（`?dimensionId=`+e.id）一致；
-// 非空时经 url.QueryEscape，避免 &/= 等字符破坏查询串。
-// 元洪附小专用接口 getCircleImgByDimensionId / getCircleTypeByDimensionId /
-// getCircleStatisticsByTypeId 属元洪附小专用页面上下文，不纳入 SDK 契约。
-func (c *Client) GetCircleTypes(ctx context.Context, token string, dimensionID int64, pid string) ([]map[string]any, error) {
-	path := "/api/studentCircleNew/getCircleType?dimensionId=" + strconv.FormatInt(dimensionID, 10)
-	if pid != "" {
-		path += "&pid=" + url.QueryEscape(pid)
-	}
-	return c.fetchMapList(ctx, token, "GetCircleTypes", path)
-}
-
-// GetCircleTasks 获取指定类别下的写实任务。
-// GET /api/studentCircleNew/getCircleTask?typeId=
-func (c *Client) GetCircleTasks(ctx context.Context, token string, typeID int64) ([]map[string]any, error) {
-	path := "/api/studentCircleNew/getCircleTask?typeId=" + strconv.FormatInt(typeID, 10)
-	return c.fetchMapList(ctx, token, "GetCircleTasks", path)
 }
 
 // GetCircleImages 获取当前用户上传的写实图片列表。

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/Wenaixi/nazhi-cli/pkg/client"
 	"github.com/Wenaixi/nazhi-cli/pkg/envelope"
@@ -22,6 +23,61 @@ var taskDimensionsCmd = &cobra.Command{
 			errorPrefix: "获取写实维度失败",
 			fetch: func(ctx context.Context, c *client.Client, token string) (any, error) {
 				return c.GetDimensions(ctx, token)
+			},
+			success: readListSuccess,
+		})
+	},
+}
+
+// taskCategoriesCmd 获取指定维度下的写实类别（支持 categories / types）。
+var taskCategoriesCmd = &cobra.Command{
+	Use:     "categories",
+	Aliases: []string{"types"},
+	Short:   "获取写实类别",
+	Long:    "按维度获取写实类别。pid 可选，用于透传平台类别树的父节点。",
+	Example: "  nazhi task categories --token eyJhbGciOiJIUzI1NiJ9.xxx --dimension-id 14 --pid 0",
+	Args:    cobra.NoArgs,
+	Run: func(cmd *cobra.Command, args []string) {
+		dimensionID, _ := cmd.Flags().GetInt64("dimension-id")
+		pid, _ := cmd.Flags().GetString("pid")
+		runReadOp(cmd, readOpMode{
+			verboseMsg:  fmt.Sprintf("正在获取写实类别 dimensionId=%d...", dimensionID),
+			errorPrefix: "获取写实类别失败",
+			validate: func(*cobra.Command) error {
+				if dimensionID <= 0 {
+					return fmt.Errorf("--dimension-id 必须为正整数")
+				}
+				return nil
+			},
+			fetch: func(ctx context.Context, c *client.Client, token string) (any, error) {
+				return c.GetTaskCategories(ctx, token, dimensionID, pid)
+			},
+			success: readListSuccess,
+		})
+	},
+}
+
+// taskItemsCmd 获取指定类别下的写实任务（支持 items / tasks）。
+var taskItemsCmd = &cobra.Command{
+	Use:     "items",
+	Aliases: []string{"tasks"},
+	Short:   "获取类别下的写实任务",
+	Long:    "按写实类别 ID 获取可用任务及其平台字段。",
+	Example: "  nazhi task items --token eyJhbGciOiJIUzI1NiJ9.xxx --type-id 9274",
+	Args:    cobra.NoArgs,
+	Run: func(cmd *cobra.Command, args []string) {
+		typeID, _ := cmd.Flags().GetInt64("type-id")
+		runReadOp(cmd, readOpMode{
+			verboseMsg:  fmt.Sprintf("正在获取类别下写实任务 typeId=%d...", typeID),
+			errorPrefix: "获取类别下写实任务失败",
+			validate: func(*cobra.Command) error {
+				if typeID <= 0 {
+					return fmt.Errorf("--type-id 必须为正整数")
+				}
+				return nil
+			},
+			fetch: func(ctx context.Context, c *client.Client, token string) (any, error) {
+				return c.GetTaskItems(ctx, token, typeID)
 			},
 			success: readListSuccess,
 		})
@@ -61,11 +117,42 @@ var taskCircleTypeCmd = &cobra.Command{
 	},
 }
 
+// taskRecentCmd 获取学生当前最近填报的写实任务。
+var taskRecentCmd = &cobra.Command{
+	Use:     "recent",
+	Short:   "获取最近提交的写实任务",
+	Long:    "获取学生当前最近填报的写实任务列表（对齐前端学生主页 getRecentlyCircleTask）。",
+	Example: "  nazhi task recent --token eyJhbGciOiJIUzI1NiJ9.xxx",
+	Args:    cobra.NoArgs,
+	Run: func(cmd *cobra.Command, args []string) {
+		runReadOp(cmd, readOpMode{
+			verboseMsg:  "正在获取最近提交任务...",
+			errorPrefix: "获取最近提交任务失败",
+			fetch: func(ctx context.Context, c *client.Client, token string) (any, error) {
+				return c.GetRecentlyCircleTask(ctx, token)
+			},
+			success: readListSuccess,
+		})
+	},
+}
+
 func init() {
 	taskCmd.AddCommand(taskDimensionsCmd)
 	registerBizFlags(taskDimensionsCmd)
 
+	taskCmd.AddCommand(taskCategoriesCmd)
+	taskCategoriesCmd.Flags().Int64("dimension-id", 0, "写实维度 ID（必填）")
+	taskCategoriesCmd.Flags().String("pid", "", "类别树父节点 ID（可选）")
+	registerBizFlags(taskCategoriesCmd)
+
+	taskCmd.AddCommand(taskItemsCmd)
+	taskItemsCmd.Flags().Int64("type-id", 0, "写实类别 ID（必填）")
+	registerBizFlags(taskItemsCmd)
+
 	taskCmd.AddCommand(taskCircleTypeCmd)
 	taskCircleTypeCmd.Flags().Int64("task-id", 0, "平台任务 ID（必填）")
 	registerBizFlags(taskCircleTypeCmd)
+
+	taskCmd.AddCommand(taskRecentCmd)
+	registerBizFlags(taskRecentCmd)
 }
