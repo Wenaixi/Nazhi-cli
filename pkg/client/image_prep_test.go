@@ -13,6 +13,7 @@ import (
 	"image/gif"
 	"image/jpeg"
 	"image/png"
+	"math/rand"
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
@@ -106,43 +107,118 @@ func TestPrepareImage_JPEGPassthrough(t *testing.T) {
 	t.Logf("JPG 透传: %d bytes", len(data))
 }
 
-// ─── 测试: 大图压缩（5MB 强制触发压缩路径）───
+// ─── 测试: 大图压缩（5MB 强制触发降档链）───
 
+// writeNoisePNG 生成指定边长的随机噪点 PNG 并返回路径与文件字节数。
+//
+// 必须用**随机噪点**而非渐变：渐变（(x+y)%256）压缩率极高，800×800 经 q92
+// 仅产出约 65KB——旧夹具正是因此「自证从未压缩」，压缩链五条路径零覆盖
+// （测试自身 t.Logf 打出「压缩率 1768.7%」而无人察觉）。
+//
+// 噪点的 JPEG 压缩率最低，是能以可控尺寸越过 5MB 闸的最小手段。
+// 固定种子保证可重复：同一尺寸每次产出同样的字节数。
+func writeNoisePNG(t *testing.T, name string, dim int) (string, int64) {
+	t.Helper()
+	img := image.NewNRGBA(image.Rect(0, 0, dim, dim))
+	rng := rand.New(rand.NewSource(20261001))
+	// 直接写 Pix 避开逐点 Set 的边界检查开销。
+	pix := img.Pix
+	for i := 0; i+3 < len(pix); i += 4 {
+		pix[i+0] = byte(rng.Intn(256))
+		pix[i+1] = byte(rng.Intn(256))
+		pix[i+2] = byte(rng.Intn(256))
+		pix[i+3] = 255
+	}
+	path := t.TempDir() + "/" + name
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatalf("创建 %s 失败: %v", name, err)
+	}
+	if err := png.Encode(f, img); err != nil {
+		_ = f.Close()
+		t.Fatalf("编码 %s 失败: %v", name, err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatalf("关闭 %s 失败: %v", name, err)
+	}
+	st, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat %s 失败: %v", name, err)
+	}
+	return path, st.Size()
+}
+
+// decodeJPEGDims 读出 JPEG 字节的像素尺寸。
+func decodeJPEGDims(t *testing.T, data []byte) (width, height int) {
+	t.Helper()
+	cfg, err := jpeg.DecodeConfig(bytes.NewReader(data))
+	if err != nil {
+		t.Fatalf("解析输出 JPEG 尺寸失败: %v", err)
+	}
+	return cfg.Width, cfg.Height
+}
+
+// TestPrepareImage_CompressesLargeImage 覆盖「q92 超限 → q80 降档达标」这条路径。
+//
+// 2400×2400 噪点实测：q92 产出 5.6MB（越 5MB 闸），q80 产出 3.8MB（达标）。
+// 这正是 qualityAfterOptimization 常量存在的意义——用一次质量降档代替立刻
+// 缩放，保住画质。
+//
+// 断言用「输出尺寸不变」而非只断言字节数：只有真正走了 q80 档才既达标又
+// 不缩放。若哪天 q80 档被删、直接跳缩放，仅断言字节数 ≤ 上限仍会通过
+// （缩放后当然也达标），本用例必须能区分这两条路径。
+//
+// 旧实现用 800×800 渐变图，q92 仅 65KB，连闸门都碰不到。
 func TestPrepareImage_CompressesLargeImage(t *testing.T) {
 	c := internalNewTestClient()
-	tmpfile := t.TempDir() + "/test-large.png"
+	path, origSize := writeNoisePNG(t, "large-noise.png", 2400)
 
-	// 创建大图（800×800 = 640K 像素；用 Pix 直接填避开 Set bounds check)。
-	// 不可压缩的渐变 pattern 确保 PNG 输出不会太小，但足够测出压缩路径。
-	const w, h = 800, 800
-	img := image.NewRGBA(image.Rect(0, 0, w, h))
-	pix := img.Pix
-	for y := 0; y < h; y++ {
-		for x := 0; x < w; x++ {
-			off := (y*w + x) * 4
-			pix[off+0] = uint8(x % 256)       // R
-			pix[off+1] = uint8(y % 256)       // G
-			pix[off+2] = uint8((x + y) % 256) // B
-			pix[off+3] = 255                  // A
-		}
+	data, mime, err := c.prepareImageForUpload(path)
+	if err != nil {
+		t.Fatalf("prepareImageForUpload 失败: %v", err)
 	}
-	f, _ := os.Create(tmpfile)
-	if err := png.Encode(f, img); err != nil {
-		f.Close()
-		t.Fatalf("编码失败: %v", err)
+	if mime != "image/jpeg" {
+		t.Errorf("mime 应为 image/jpeg，实际 %q", mime)
 	}
-	f.Close()
-	origStat, _ := os.Stat(tmpfile)
-	t.Logf("原图大小: %d bytes", origStat.Size())
+	if len(data) > MaxImageSize {
+		t.Errorf("降档后仍超 %d bytes: %d", MaxImageSize, len(data))
+	}
+	w, h := decodeJPEGDims(t, data)
+	if w != 2400 || h != 2400 {
+		t.Errorf("q80 降档档不缩放，输出尺寸应仍为 2400x2400，实际 %dx%d"+
+			"（若被缩放说明走了缩放级联，本用例已失去对 q80 档的覆盖）", w, h)
+	}
+	t.Logf("2400×2400 噪点：输入 %d bytes → 输出 %d bytes（尺寸 %dx%d，未缩放）",
+		origSize, len(data), w, h)
+}
 
-	data, _, err := c.prepareImageForUpload(tmpfile)
+// TestPrepareImage_ScalesWhenQualityCascadeInsufficient 覆盖「q80 仍超限 →
+// 进缩放级联 0.25 温和档」这条路径。
+//
+// 3000×3000 噪点实测：q92 约 8.8MB、q80 约 6.0MB（两者都越 5MB 闸），
+// 因此必然进入缩放级联；温和档把边长缩到 25% 即 750×750 后达标。
+//
+// 断言用「输出尺寸约为输入的 25%」而非只断言字节数：字节数 ≤ 上限在
+// 「缩放失效但 q40 恰好压够」时也会成立，尺寸断言才能证明缩放确实发生。
+func TestPrepareImage_ScalesWhenQualityCascadeInsufficient(t *testing.T) {
+	c := internalNewTestClient()
+	path, origSize := writeNoisePNG(t, "huge-noise.png", 3000)
+
+	data, _, err := c.prepareImageForUpload(path)
 	if err != nil {
 		t.Fatalf("prepareImageForUpload 失败: %v", err)
 	}
 	if len(data) > MaxImageSize {
-		t.Errorf("压缩后仍超 %d bytes: %d", MaxImageSize, len(data))
+		t.Errorf("缩放级联后仍超 %d bytes: %d", MaxImageSize, len(data))
 	}
-	t.Logf("压缩后: %d bytes (压缩率 %.1f%%)", len(data), float64(len(data))/float64(origStat.Size())*100)
+	w, h := decodeJPEGDims(t, data)
+	// 温和档目标边长 = 3000 * 0.25 = 750。允许 ±2 像素的取整误差。
+	if w > 760 || h > 760 || w < 740 || h < 740 {
+		t.Errorf("应走 0.25 缩放档，输出边长应约 750（3000 的 25%%），实际 %dx%d；"+
+			"尺寸未变说明缩放级联未生效", w, h)
+	}
+	t.Logf("3000×3000 噪点：输入 %d bytes → 输出 %d bytes（尺寸 %dx%d，已缩放）",
+		origSize, len(data), w, h)
 }
 
 // ─── 测试: GIF 动画取第 0 帧 ───

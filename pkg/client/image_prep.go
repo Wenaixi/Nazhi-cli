@@ -43,7 +43,16 @@ var ErrUnsupportedFormat = errors.New("unsupported image format")
 //  1. decodeImage 读文件并按魔术字节识别格式
 //  2. 解码 + 透明合成 + 动画取首帧
 //  3. 编码为 JPG（q92 起步）
-//  4. 超限依次降档：q80 重编 → 0.25 缩放+q80 → 0.082 缩放+q40 → 报错
+//  4. 超限则降档。**降档是有条件的链，不是无条件依次尝试**：
+//     - q92 超 5MB 且未超 10MB（2×上限）→ q80 重编一次；仍超限则进缩放级联。
+//       超 10MB 则**跳过 q80 档**直接进缩放级联（q80 对超大图通常不够，
+//       省一次编码）。
+//     - 缩放级联先试温和档 0.25 倍边长 + q80（短边需 ≥40px，否则整档跳过），
+//       未达标再试极限档 0.082 倍边长 + q40（短边需 ≥122px；不足则跳过缩放，
+//       以原尺寸 q40 编码）。
+//     - 仍超限则 ErrImageTooLarge。
+//     另有更早的失败出口：任一档编码失败即返回（带 ErrInvalidPayload），
+//     并非「四档全落空后才报错」。
 //
 // 全部在内存中完成，不写盘、不修改原文件。
 func (c *Client) prepareImageForUpload(path string) ([]byte, string, error) {
