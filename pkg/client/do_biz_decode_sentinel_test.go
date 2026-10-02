@@ -5,6 +5,9 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 )
@@ -37,5 +40,35 @@ func TestDoBizAndDecode_BadJSONHasInvalidResponseSentinel(t *testing.T) {
 	}
 	if !errors.Is(err, ErrInvalidResponse) {
 		t.Errorf("200+非 JSON 解码失败应包装 ErrInvalidResponse，实际: %v", err)
+	}
+}
+
+// TestDecodeResponseSingleScaffold 锁定「业务响应解码」只有一处实现。
+//
+// 背景：doBizAndDecode 曾内联一句与 decodeOrInvalidResponse 逐字相同的
+// fmt.Errorf，两处包裹的 error 同来自 types.DecodeResponse，哨兵与 opName
+// 也同参。当时保留内联的理由是「日志上下文就地可读」，但 helper 本身就收
+// opName，该理由不成立——重复是唯一遗留理由。
+//
+// 本守卫按骨架计数而非按文案匹配：文案改写无需重新裁决，但「新增一处
+// types.DecodeResponse 裸调用」必须被挡住，因为裸调用会绕过
+// ErrInvalidResponse 哨兵，CLI 漏斗随之把「200 但响应体不可信」判成
+// default 500/exit2，而 httpDo/doBizGet 的同形态走 502/exit2。
+func TestDecodeResponseSingleScaffold(t *testing.T) {
+	data, err := os.ReadFile("request.go")
+	if err != nil {
+		t.Fatalf("读取 request.go 失败: %v", err)
+	}
+	var sites []string
+	for i, line := range strings.Split(string(data), "\n") {
+		if strings.Contains(line, "types.DecodeResponse(") {
+			sites = append(sites, "第"+strconv.Itoa(i+1)+"行")
+		}
+	}
+	if len(sites) != 1 {
+		t.Fatalf("types.DecodeResponse( 应只在 decodeOrInvalidResponse 内出现一次，实际出现 %d 次（%s）。\n"+
+			"新增裸调用会绕过 ErrInvalidResponse 哨兵，使 CLI 把「200 但响应体不可信」\n"+
+			"判成 default 500/exit2，与 httpDo/doBizGet 的 502/exit2 不一致。",
+			len(sites), strings.Join(sites, "、"))
 	}
 }

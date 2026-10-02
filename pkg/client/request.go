@@ -227,11 +227,12 @@ func (c *Client) doBizAndDecode(ctx context.Context, token, opName, path, method
 		return nil, fmt.Errorf("%s 请求失败: %w", opName, err)
 	}
 
-	resp, err := types.DecodeResponse(bodyBytes)
+	// 2xx 但 body 非 JSON（nginx 维护页/WAF 挑战页）同样归 ErrInvalidResponse，
+	// 与非 2xx 分支的 classifyHTTPStatus 哨兵口径拉平，保证 errors.Is 判定全覆盖。
+	// 该包装由 decodeOrInvalidResponse 单点持有，勿在本函数内联第二份。
+	resp, err := decodeOrInvalidResponse(opName, bodyBytes)
 	if err != nil {
-		// 2xx 但 body 非 JSON（nginx 维护页/WAF 挑战页）同样归 ErrInvalidResponse，
-		// 与非 2xx 分支的 classifyHTTPStatus 哨兵口径拉平，保证 errors.Is 判定全覆盖。
-		return nil, fmt.Errorf("%s 响应解析失败: %w: %w", opName, ErrInvalidResponse, err)
+		return nil, err
 	}
 
 	if err := checkBizCode(opName, resp); err != nil {
@@ -246,12 +247,19 @@ func (c *Client) doBizAndDecode(ctx context.Context, token, opName, path, method
 // 200+HTML（WAF/维护页）场景下落空，CLI 漏斗走 default 500/exit2。附哨兵后
 // 该场景归 502/exit2。
 //
-// 当前调用点两处：GetSchoolID 与 doBizGetRaw。getMyInfoRaw 与两条任务维度
-// 管线已改走 doBizGetRaw，不再直调本 helper。主管线 doBizAndDecode 自行内联
-// 同口径的包装，未接入本 helper——两处文案与哨兵相同，但分属不同调用路径
-// （一条带预热、一条不带），保持各自内联以便日志上下文就地可读。
+// 当前调用点三处：GetSchoolID、doBizGetRaw 与主管线 doBizAndDecode。
+// getMyInfoRaw 与两条任务维度管线经 doBizGetRaw 间接经过本 helper。
 //
-// 新增 types.DecodeResponse 裸调用前先考虑接入本 helper，勿再扩大裸调用面。
+// 本 helper 曾只覆盖两处，doBizAndDecode 内联了逐字相同的一句包装，理由是
+// 「保持各自内联以便日志上下文就地可读」——该理由不成立：本函数本身就收
+// opName，日志上下文与内联形态完全等价。两处包裹的 error 同来自
+// types.DecodeResponse、哨兵与 opName 也同参，合并后错误文案与 errors.Is
+// 链逐字不变，重复是内联的唯一理由。
+//
+// types.DecodeResponse 的裸调用面由 do_biz_decode_sentinel_test.go 的
+// TestDecodeResponseSingleScaffold 按骨架计数锁定为 1：新增裸调用会绕过
+// ErrInvalidResponse 哨兵，使 CLI 把「200 但响应体不可信」判成 default
+// 500/exit2，与 httpDo/doBizGet 的 502/exit2 不一致。
 func decodeOrInvalidResponse(opName string, bodyBytes []byte) (types.UnifiedResponse, error) {
 	resp, err := types.DecodeResponse(bodyBytes)
 	if err != nil {
