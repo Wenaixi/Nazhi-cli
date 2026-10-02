@@ -7,6 +7,8 @@ import (
 	"net"
 	"net/url"
 	"testing"
+
+	"github.com/Wenaixi/nazhi-cli/pkg/types"
 )
 
 // timeoutError 是一个模拟超时的 error，实现 Timeout() bool 接口。
@@ -141,4 +143,54 @@ func TestClassifyError_Priority(t *testing.T) {
 			t.Errorf("期望 ContextTimeout，得到 %v", got)
 		}
 	})
+}
+
+// ─── ParallelDims 错误分类测试 ───
+
+// TestParallelDims_ErrorClassification 锁定 ParallelDims 的错误分桶语义，
+// 使「分类 switch 简化」这类纯结构调整可被独立验证。
+//
+// 分桶口径：context 取消/超时单独成桶（CancelledCount + ContextErrors），
+// 其余一律进业务失败桶（FailedCount + BizErrors）。改动前的三分支 switch 中
+// NetworkTimeout 与 BusinessError 两分支的循环体逐字相同、default 又与它们
+// 相同，故三桶实为两桶。期望值必须是独立字面量，不得写成对 ClassifyError 的
+// 二次映射，否则断言与被测实现同源、恒绿。
+func TestParallelDims_ErrorClassification(t *testing.T) {
+	ctxErr := fmt.Errorf("维度 3(丙): %w", context.Canceled)
+	bizErr := fmt.Errorf("维度 5(戊): %w", ErrBusinessRejected)
+	otherErr := errors.New("维度 7(庚): 未知故障")
+
+	tests := []struct {
+		name          string
+		injected      error
+		wantCancelled int
+		wantFailed    int
+		wantCtxBucket bool
+		wantBizBucket bool
+	}{
+		{"context 取消进取消桶", ctxErr, 1, 0, true, false},
+		{"业务拒绝进失败桶", bizErr, 0, 1, false, true},
+		{"未知错误进失败桶", otherErr, 0, 1, false, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dims := []types.Dimension{{ID: 1, Name: "甲"}}
+			result, _ := ParallelDims(context.Background(), dims, 1, func(context.Context, types.Dimension) ([]types.Task, error) {
+				return nil, tt.injected
+			})
+			if result.CancelledCount != tt.wantCancelled {
+				t.Errorf("CancelledCount = %d, want %d", result.CancelledCount, tt.wantCancelled)
+			}
+			if result.FailedCount != tt.wantFailed {
+				t.Errorf("FailedCount = %d, want %d", result.FailedCount, tt.wantFailed)
+			}
+			if got := len(result.ContextErrors) > 0; got != tt.wantCtxBucket {
+				t.Errorf("ContextErrors 非空 = %v, want %v", got, tt.wantCtxBucket)
+			}
+			if got := len(result.BizErrors) > 0; got != tt.wantBizBucket {
+				t.Errorf("BizErrors 非空 = %v, want %v", got, tt.wantBizBucket)
+			}
+		})
+	}
 }

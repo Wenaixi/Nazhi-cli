@@ -161,17 +161,18 @@ func ParallelDims[T any](ctx context.Context, dims []types.Dimension, limit int,
 	result = &ParallelDimsResult[T]{Items: allItems}
 
 	for _, e := range allErrs {
-		switch ClassifyError(e) { //nolint:exhaustive
-		case CategoryContextCancel, CategoryContextTimeout:
+		// 分桶口径与同文件的 classifyDimErrors 一致：context 取消与超时单独成桶，
+		// 其余（业务拒绝、网络超时、未知）一律计入业务失败。
+		// 此处曾按 ClassifyError 的五分类分三桶，但 NetworkTimeout 与
+		// BusinessError 两分支的循环体逐字相同、default 又与它们相同——
+		// 三分支实为两桶，枚举分类只多出读者要记的一层对应关系。
+		if isContextError(e) {
 			result.CancelledCount++
 			result.ContextErrors = append(result.ContextErrors, e)
-		case CategoryNetworkTimeout, CategoryBusinessError:
-			result.FailedCount++
-			result.BizErrors = append(result.BizErrors, e)
-		default:
-			result.FailedCount++
-			result.BizErrors = append(result.BizErrors, e)
+			continue
 		}
+		result.FailedCount++
+		result.BizErrors = append(result.BizErrors, e)
 	}
 	return result, egErr
 }
