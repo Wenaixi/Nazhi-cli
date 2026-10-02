@@ -3,6 +3,7 @@ package main
 import (
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 
@@ -77,5 +78,31 @@ func TestCircleWrite_InvalidID_RejectsWithoutRequest(t *testing.T) {
 				t.Errorf("应输出 %q 参数错误 envelope，实际: %q", tc.want, stderrstdout.String())
 			}
 		})
+	}
+}
+
+// TestCircleCommands_DelegatedToRunReadOp 锁定写实互动三命令的控制流归属。
+//
+// 背景：circle delete / like / comment 三者的 Run 体前 15 行逐字相同
+// （读 --id → 判空 → ParseInt → 判正 → buildBizClient → verbose → SDK → 输出），
+// 只有命令名、verbose 文案、错误前缀与成功信封形态四处分叉。此前各自内联
+// 一份「先校后建」控制流，改校验次序或输出形状时要三处手工同步。
+//
+// 本守卫按骨架计数：三文件不得直接出现 buildBizClient( —— 它们必须经
+// runReadOp 的 fetch 闭包建客户端。这样「先校后建」这条用户可见契约
+// （缺 --token 与 --id 非法同时发生时先报 --id）由 runner 单点承载。
+func TestCircleCommands_DelegatedToRunReadOp(t *testing.T) {
+	for _, name := range []string{"circle_delete.go", "circle_like.go", "circle_comment.go"} {
+		data, err := os.ReadFile(name)
+		if err != nil {
+			t.Fatalf("读取 %s 失败: %v", name, err)
+		}
+		src := string(data)
+		if strings.Contains(src, "buildBizClient(") {
+			t.Errorf("%s 仍直接调用 buildBizClient，应改走 runReadOp 的 fetch 闭包", name)
+		}
+		if !strings.Contains(src, "runReadOp(") {
+			t.Errorf("%s 未走 runReadOp，控制流归属不明确", name)
+		}
 	}
 }

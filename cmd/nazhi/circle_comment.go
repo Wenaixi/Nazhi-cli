@@ -1,10 +1,10 @@
 package main
 
 import (
+	"context"
 	"errors"
-	"fmt"
-	"strconv"
 
+	"github.com/Wenaixi/nazhi-cli/pkg/client"
 	"github.com/Wenaixi/nazhi-cli/pkg/envelope"
 	"github.com/spf13/cobra"
 )
@@ -17,40 +17,40 @@ var circleCommentCmd = &cobra.Command{
 	Example: "  nazhi circle comment --id 123456 --content '写得好' --token xxx",
 	Args:    cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
-		idStr, _ := cmd.Flags().GetString("id")
-		if idStr == "" {
-			printParamError(errors.New("--id 为必填"))
+		// 两条校验的次序是既有契约：先 --id 后 --content。
+		// 两者都在建客户端之前，与 circle delete / like 同派。
+		id, ok := circleIDFromFlag(cmd)
+		if !ok {
 			return
 		}
-		id, err := strconv.ParseInt(idStr, 10, 64)
-		if err != nil || id <= 0 {
-			printParamError(errors.New("--id 必须为正整数"))
-			return
-		}
-
 		content, _ := cmd.Flags().GetString("content")
 		if content == "" {
 			printParamError(errors.New("--content 为必填"))
 			return
 		}
-
-		c, token, err := buildBizClient(cmd)
-		if err != nil {
-			printParamError(err)
-			return
-		}
-
-		printVerbose("正在添加评论...")
-		comment, err := c.AddCircleComment(cmd.Context(), token, id, content)
-		if err != nil {
-			printError(fmt.Errorf("添加评论失败: %w", err))
-			return
-		}
-		if comment != nil {
-			printEnvelope(envelope.Success(comment))
-			return
-		}
-		printEnvelope(envelope.Empty("评论成功"))
+		runReadOp(cmd, readOpMode{
+			verboseMsg:  "正在添加评论...",
+			errorPrefix: "添加评论失败",
+			fetch: func(ctx context.Context, c *client.Client, token string) (any, error) {
+				// AddCircleComment 成功时 returnData 缺失会返回 (nil, nil)：
+				// 那不是错误（前端 commentList.unshift 拿到什么就 unshift 什么），
+				// 归一成占位载荷，由 success 闭包走 Empty 分支。
+				comment, err := c.AddCircleComment(ctx, token, id, content)
+				if err != nil {
+					return nil, err
+				}
+				if comment == nil {
+					return emptyPayload{}, nil
+				}
+				return comment, nil
+			},
+			success: func(result any) *envelope.Envelope {
+				if _, empty := result.(emptyPayload); empty {
+					return envelope.Empty("评论成功")
+				}
+				return envelope.Success(result)
+			},
+		})
 	},
 }
 

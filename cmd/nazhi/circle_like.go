@@ -1,10 +1,9 @@
 package main
 
 import (
-	"errors"
-	"fmt"
-	"strconv"
+	"context"
 
+	"github.com/Wenaixi/nazhi-cli/pkg/client"
 	"github.com/Wenaixi/nazhi-cli/pkg/envelope"
 	"github.com/spf13/cobra"
 )
@@ -13,33 +12,24 @@ import (
 var circleLikeCmd = &cobra.Command{
 	Use:     "like",
 	Short:   "点赞/取消点赞写实记录",
-	Long:    "给指定写实记录点赞或取消点赞。服务端自动切换点赞/取消状态。",
+	Long:    "给指定 ID 的写实记录点赞或取消点赞。服务端自动切换点赞/取消状态。",
 	Example: "  nazhi circle like --id 123456 --token xxx",
 	Args:    cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
-		idStr, _ := cmd.Flags().GetString("id")
-		if idStr == "" {
-			printParamError(errors.New("--id 为必填"))
+		// 先校后建：--id 非法在建客户端之前就拒（与 circle delete / comment 同派）。
+		id, ok := circleIDFromFlag(cmd)
+		if !ok {
 			return
 		}
-		id, err := strconv.ParseInt(idStr, 10, 64)
-		if err != nil || id <= 0 {
-			printParamError(errors.New("--id 必须为正整数"))
-			return
-		}
-
-		c, token, err := buildBizClient(cmd)
-		if err != nil {
-			printParamError(err)
-			return
-		}
-
-		printVerbose("正在点赞...")
-		if err := c.SetCircleLike(cmd.Context(), token, id); err != nil {
-			printError(fmt.Errorf("点赞失败: %w", err))
-			return
-		}
-		printEnvelope(envelope.Empty("操作成功"))
+		runReadOp(cmd, readOpMode{
+			verboseMsg:  "正在点赞...",
+			errorPrefix: "点赞失败",
+			fetch: func(ctx context.Context, c *client.Client, token string) (any, error) {
+				// SetCircleLike 成功路径无业务负载，返回占位载荷理由同 circle delete。
+				return emptyPayload{}, c.SetCircleLike(ctx, token, id)
+			},
+			success: func(any) *envelope.Envelope { return envelope.Empty("操作成功") },
+		})
 	},
 }
 
