@@ -121,6 +121,11 @@ func init() {
 	typicalCaseCmd.AddCommand(typicalCaseDeleteBatchCmd)
 	typicalCaseDeleteBatchCmd.Flags().String("payload", "", "典型案例 ID 数组（必填，可用 @file.json 从文件读取，或 - 从 stdin 读取）")
 	registerBizFlags(typicalCaseDeleteBatchCmd)
+
+	// typical-case level-codes：纯本地查表，不注册业务 flag、不需要 token。
+	// 刻意不并入 nazhi task level-codes——两域 level 码表语义不同，
+	// 并入同一信封正是 CLAUDE.md 明令禁止的混用入口。
+	typicalCaseCmd.AddCommand(typicalCaseCodesCmd)
 }
 
 // typicalCaseDeleteBatchCmd 表示 nazhi typical-case delete-batch 命令。

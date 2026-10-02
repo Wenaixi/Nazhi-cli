@@ -10,28 +10,15 @@ import (
 	"github.com/Wenaixi/nazhi-cli/pkg/types"
 )
 
-// 典型案例下拉展示名（对齐 classiccanter.vue el-option label）。
+// 典型案例下拉展示名取自 pkg/types 的三张对照表（该处为唯一真相源）。
 // 用户只选 code；SDK 在 *Name 为空时自动补全。
 // type=2 为「社会调查报告」（非「社会实践报告」）；level=1 为「国际」（非写实列表的「国家」）。
-var (
-	typicalCaseTypeNames = map[string]string{
-		"1": "研究性学习报告",
-		"2": "社会调查报告",
-		"3": "艺术创作作品",
-		"4": "其他",
-	}
-	typicalCaseRoleNames = map[string]string{
-		"1": "负责人", // types.TypicalCaseRoleHost
-		"2": "参与者", // types.TypicalCaseRoleParticipant
-	}
-	typicalCaseLevelNames = map[string]string{
-		"1": "国际",
-		"2": "省",
-		"3": "市",
-		"4": "区县",
-		"5": "学校",
-	}
-)
+//
+// 表移入 pkg/types 的理由：写实域三表同址，CLI 已有 nazhi task level-codes
+// 据此输出查表命令；典型案例三表原先留在本包未导出，CLI 无法枚举，用户
+// 无从核对 payload 里 type/role/level 的合法取值。查表命令分设两路
+// （nazhi typical-case level-codes），不与写实域并入同一信封——两套 level
+// 码表语义不同，合在一起正是 CLAUDE.md 明令禁止的混用入口。
 
 // fillTypicalCaseDisplayNames 在 TypeName/RoleName/LevelName 为空时按 code 填展示名。
 // 已有非空 *Name 不覆盖，便于调用方自定义文案。
@@ -40,17 +27,17 @@ func fillTypicalCaseDisplayNames(p *types.AddTypicalCasePayload) {
 		return
 	}
 	if p.TypeName == "" {
-		if n, ok := typicalCaseTypeNames[p.Type]; ok {
+		if n, ok := types.TypicalCaseTypeNames[p.Type]; ok {
 			p.TypeName = n
 		}
 	}
 	if p.RoleName == "" {
-		if n, ok := typicalCaseRoleNames[p.Role]; ok {
+		if n, ok := types.TypicalCaseRoleNames[p.Role]; ok {
 			p.RoleName = n
 		}
 	}
 	if p.LevelName == "" {
-		if n, ok := typicalCaseLevelNames[p.Level]; ok {
+		if n, ok := types.TypicalCaseLevelNames[p.Level]; ok {
 			p.LevelName = n
 		}
 	}
@@ -94,21 +81,21 @@ func fillTypicalCaseDisplayNamesMap(payload map[string]any) {
 	}
 	if typeName, _ := payload["typeName"].(string); typeName == "" {
 		if code, ok := typicalCaseCodeString(payload["type"]); ok {
-			if n, ok := typicalCaseTypeNames[code]; ok {
+			if n, ok := types.TypicalCaseTypeNames[code]; ok {
 				payload["typeName"] = n
 			}
 		}
 	}
 	if roleName, _ := payload["roleName"].(string); roleName == "" {
 		if code, ok := typicalCaseCodeString(payload["role"]); ok {
-			if n, ok := typicalCaseRoleNames[code]; ok {
+			if n, ok := types.TypicalCaseRoleNames[code]; ok {
 				payload["roleName"] = n
 			}
 		}
 	}
 	if levelName, _ := payload["levelName"].(string); levelName == "" {
 		if code, ok := typicalCaseCodeString(payload["level"]); ok {
-			if n, ok := typicalCaseLevelNames[code]; ok {
+			if n, ok := types.TypicalCaseLevelNames[code]; ok {
 				payload["levelName"] = n
 			}
 		}
