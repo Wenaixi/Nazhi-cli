@@ -57,12 +57,41 @@ func (c *Client) ActivateSession(ctx context.Context, token string) (*types.User
 	if err != nil || info == nil {
 		return info, err
 	}
-	// 学校信息 SSO 回退在 sm.mu 锁外执行，不得把网络往返拼进临界区。
-	// 用当前 token 绑定完成状态，避免旧 token 的迟到回退误标记新缓存。
-	if !c.sm.fallbackCompletedFor(token) {
+	// P1-B：学校信息 SSO 回退在 sm.mu 锁外执行（幂等：字段已齐则零开销直通）。
+	//
+	// 共指针约束：info 与 sm.cachedUserInfo 是同一指针（RecordSuccess 原指针入缓存），
+	// 锁外直接 postProcessSchoolFallback(ctx, info) 会原地改共享缓存指针，与 fast path
+	// 并发读取方形成数据竞争（Go 内存模型下 string 头撕裂风险）。
+	// 修法：浅拷贝出 infoCopy，让 postProcessSchoolFallback 改副本；UpdateCachedUserInfo(infoCopy)
+	// 把缓存指针替换为 infoCopy（不同指针但 token 一致 → 走替换分支）；fast path 命中后
+	// 继续返回 infoCopy（同一指针），保持 DCL 同一缓存指针契约。原 info（步骤 4 网络响应对象）
+	// 不再被并发读到。
+	// 锁外回退：学校信息 SSO 回退在 sm.mu 锁外执行，不得把网络往返拼进临界区。
+	//
+	// 修复要点：info 与 sm.cachedUserInfo 是同一指针（RecordSuccess 原指针入缓存），
+	// 锁外直接 postProcessSchoolFallback(ctx, info) 会原地改共享缓存指针，与 fast path
+	// 并发读取方形成数据竞争（Go 内存模型下 string 头撕裂风险）。
+	//
+	// 修法：用 sm.fallbackDone 原子标志判断当前缓存是否已 fallback 补完成。
+	//   - false（首次激活或缓存被 RecordFailure 清空后）：浅拷贝出 infoCopy，让 fallback 改副本，
+	//     UpdateCachedUserInfo(&infoCopy) 把缓存指针替换为 infoCopy；fallbackDone 设回 true。
+	//     fast path 重入返回的也是 infoCopy（同一指针），保持 DCL 同一缓存指针契约。
+	//   - true（上次已 fallback）：直接返回 info，缓存指针不变，DCL 同一指针契约保持。
+	if !c.sm.fallbackDone.Load() {
 		infoCopy := *info
 		c.postProcessSchoolFallback(ctx, &infoCopy)
-		c.sm.publishFallback(&infoCopy, token)
+		// 置位 fallbackDone：本出口返回前缓存指针已由 UpdateCachedUserInfo
+		// 按 token 匹配写入，跨 token 的迟到写入会被忽略——那种情况下标志
+		// 仍被置位，但缓存属于另一个 token，它自身的激活会重新走一遍回退。
+		// 故标志的语义是「本进程已做过一次学校信息回退」，不是「当前缓存
+		// 一定已补全」。
+		//
+		// 跨 token 交错的精确保障在锁内：RecordSuccess / RecordFailure 只在
+		// 持 sm.mu 的激活路径内被调用，而本段全程在锁外，两者互斥不重叠。
+		// 此前注释描述的「A 的回退被 B 的 RecordSuccess 重置标志后让 B 跳过
+		// 回退」场景在当前锁结构下不可达，属虚构，已删除。
+		c.sm.UpdateCachedUserInfo(&infoCopy, token)
+		c.sm.fallbackDone.Store(true)
 		return &infoCopy, nil
 	}
 	return info, nil
@@ -181,7 +210,8 @@ type sessionManager struct {
 	lastFailedToken string
 	cachedUserInfo  *types.UserInfo // 持锁 fast path 缓存。CLI 单进程命中一次，
 	// SDK 多 goroutine 并发 FetchTasks 可复用步骤 4 数据。
-	fallbackToken atomic.Value // 存储已完成学校回退的 token，锁外读取安全。
+	fallbackDone atomic.Bool // 标记当前 cachedUserInfo 是否已走 postProcessSchoolFallback，
+	// 锁外读安全。ActivateSession 据此跳过重复 fallback（重复 fallback 替换缓存指针会破坏 DCL 同一指针契约）。
 }
 
 // isBackoffHit 检查给定 token 是否在 backoff 冷却窗口内。
@@ -199,30 +229,6 @@ func (sm *sessionManager) isBackoffHit(token string) bool {
 
 // LoadToken 原子读当前 session token（fast path 用）。
 // atomic.Value 存储类型必须是 string，type assertion 失败 panic 暴露编程错误。
-func (sm *sessionManager) fallbackCompletedFor(token string) bool {
-	v := sm.fallbackToken.Load()
-	if v == nil {
-		return false
-	}
-	completedToken, ok := v.(string)
-	return ok && completedToken == token
-}
-
-// publishFallback 只发布仍属于当前 token 的回退结果。
-func (sm *sessionManager) publishFallback(info *types.UserInfo, token string) {
-	sm.mu.Lock()
-	defer sm.mu.Unlock()
-	if info == nil || sm.LoadToken() != token {
-		return
-	}
-	sm.cachedUserInfo = info
-	sm.fallbackToken.Store(token)
-}
-
-func (sm *sessionManager) resetFallback() {
-	sm.fallbackToken.Store("")
-}
-
 func (sm *sessionManager) LoadToken() string {
 	v := sm.token.Load()
 	if v == nil {
@@ -259,11 +265,11 @@ func (sm *sessionManager) Reset() {
 // 持锁，调用方无需关心并发安全。
 //
 // 典型场景：UpdateMyInfo 成功后调用，避免后续 GetMyInfo 返回更新前的快照。
-// 清除回退 token：新缓存尚未经过学校回退，出口门控不得跳过它。
+// 同步重置 fallbackDone：新缓存尚未经过学校回退，出口门控不得因残留标志跳过它。
 func (sm *sessionManager) InvalidateCachedUserInfo() {
 	sm.mu.Lock()
 	sm.cachedUserInfo = nil
-	sm.resetFallback()
+	sm.fallbackDone.Store(false)
 	sm.mu.Unlock()
 }
 
@@ -305,7 +311,7 @@ func (sm *sessionManager) RecordFailure(token string, err error) {
 	// 污染当前活跃 token 的 cachedUserInfo
 	if sm.LoadToken() == token {
 		sm.cachedUserInfo = nil
-		sm.resetFallback()
+		sm.fallbackDone.Store(false)
 	}
 }
 
@@ -317,9 +323,9 @@ func (sm *sessionManager) RecordSuccess(token string, info *types.UserInfo) {
 	if info != nil {
 		sm.cachedUserInfo = info
 	}
-	// 新缓存的学校回退尚未执行，清除回退 token 让出口门控重新走补全分支
-	// （否则换 token / 缓存重建后学校信息可能被错误跳过）。
-	sm.resetFallback()
+	// 新缓存的学校回退尚未执行，重置标志让 ActivateSession 出口门控重新走补全分支
+	// （否则换 token / 缓存重建后 SchoolID/SchoolName 静默为空，直到同 token 失败一次才自愈）。
+	sm.fallbackDone.Store(false)
 }
 
 // SetBackoff 设置 backoff 窗口。

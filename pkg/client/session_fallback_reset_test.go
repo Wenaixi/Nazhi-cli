@@ -10,9 +10,9 @@ import (
 )
 
 // TestActivateSession_TokenSwitch_RerunsSchoolFallback 锁定行为契约：
-// 回退完成状态必须随「激活成功换新缓存」与「缓存失效」一起重置。
-// 缺陷态（未修复）：token-A 激活完成学校回退后完成状态残留；切换 token-B
-// 激活成功走 RecordSuccess 但状态未绑定当前 token → 出口门控直接返回未经回退的 info，
+// fallbackDone 标志必须随「激活成功换新缓存」与「缓存失效」一起重置。
+// 缺陷态（未修复）：token-A 激活完成学校回退后 fallbackDone=true；切换 token-B
+// 激活成功走 RecordSuccess 但标志残留 true → 出口门控直接返回未经回退的 info，
 // B 的 SchoolID/SchoolName 静默为空，直到一次同 token 激活失败才自愈。
 func TestActivateSession_TokenSwitch_RerunsSchoolFallback(t *testing.T) {
 	var ssoHits int32
@@ -67,7 +67,7 @@ func TestActivateSession_TokenSwitch_RerunsSchoolFallback(t *testing.T) {
 		t.Fatalf("tok-B 激活失败: %v", err)
 	}
 	if infoB.SchoolID == 0 || infoB.SchoolName == "" {
-		t.Fatalf("tok-B 换 token 后学校回退被跳过（回退 token 未随 RecordSuccess 重置）: SchoolID=%d SchoolName=%q", infoB.SchoolID, infoB.SchoolName)
+		t.Fatalf("tok-B 换 token 后学校回退被跳过（fallbackDone 未随 RecordSuccess 重置）: SchoolID=%d SchoolName=%q", infoB.SchoolID, infoB.SchoolName)
 	}
 
 	// 同 token fast path 重入：不应再次触发回退（幂等）
@@ -79,23 +79,9 @@ func TestActivateSession_TokenSwitch_RerunsSchoolFallback(t *testing.T) {
 	}
 }
 
-// TestFallbackCompletion_IsBoundToToken 锁定学校回退完成状态必须绑定 token。
-// 旧实现使用全局布尔值，旧 token 的锁外回退完成后可能误标记新 token。
-func TestFallbackCompletion_IsBoundToToken(t *testing.T) {
-	sm := &sessionManager{}
-	sm.fallbackToken.Store("tok-A")
-
-	if sm.fallbackCompletedFor("tok-B") {
-		t.Fatal("tok-A 的回退完成状态不得命中 tok-B")
-	}
-	if !sm.fallbackCompletedFor("tok-A") {
-		t.Fatal("当前 token 的回退完成状态应命中")
-	}
-}
-
-// TestInvalidateCachedUserInfo_ResetsFallbackToken 锁定：UpdateMyInfo 后缓存失效重建，
-// 新缓存同样必须重新经过学校回退，不得因残留 token 跳过。
-func TestInvalidateCachedUserInfo_ResetsFallbackToken(t *testing.T) {
+// TestInvalidateCachedUserInfo_ResetsFallbackFlag 锁定：UpdateMyInfo 后缓存失效重建，
+// 新缓存同样必须重新经过学校回退，不得因残留标志跳过。
+func TestInvalidateCachedUserInfo_ResetsFallbackFlag(t *testing.T) {
 	var ssoHits int32
 	sso := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/teacher/auth/studentLogin/getSchoolIdByStudentNumber" {
