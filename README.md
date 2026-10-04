@@ -24,7 +24,7 @@
 
 - **免验证码登录** — 登录走五育活动端 `/uiActivityLogin/studentLogin`，密码本地 MD5 计算，无验证码
 - **纯 Go 构建** — 无 CGO、无模型文件随二进制打包
-- **HAR 验证 4 步 Session 激活** — `pkg/client/session.go` 的 `sessionManager` 状态机 + DCL fast-path + 同 token backoff 缓存
+- **HAR 验证 4 步 Session 激活** — `pkg/client/session.go` 的 `sessionManager` 状态机 + DCL fast-path + 同 token backoff 缓存；学校信息 SSO 回退在锁外执行，代次隔离改造仍待独立完成
 - **完整错误链** — 16 个哨兵错误（`ErrNetwork` / `ErrRateLimited` / `ErrRetryable` 等），`errors.Is` 精确分支
 - **Cookie + Header 双重 Token 注入** — 业务服务器要求 `X-Auth-Token` 双形态存在，SDK 一次性处理
 - **并发安全** — 每个 `*Client` 独立 cookie jar，atomic.Pointer 保护 baseURL 预解析热路径无锁

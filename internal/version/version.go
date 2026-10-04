@@ -126,4 +126,8 @@ package version
 //	        补齐学生主页近期填报任务接口 GetRecentlyCircleTask（对齐 mainLeft.vue:73）；
 //	        CLI task 新增 categories、items、recent 子命令；
 //	        消除 write_op_runner 伪泛型闭包；CLAUDE.md 核心记忆库深度精简 80%
-var Version = "1.9.0"
+//	1.10.0 — 架构评审文档收口与发布治理：
+//	        记录五个架构候选的源码核实裁决；保留任务提交、写操作和双路径分页 seam；
+//	        明确会话学校信息回退竞态仍待不可复用代次、取消清理和真实并发测试后再修复；
+//	        精简 CLAUDE.md，校准前端对照、门禁与当前实现事实。
+var Version = "1.10.0"
