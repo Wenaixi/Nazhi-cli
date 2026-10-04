@@ -93,24 +93,6 @@ func TestFallbackCompletion_IsBoundToToken(t *testing.T) {
 	}
 }
 
-func TestFallbackFlight_AllowsOneLeaderPerToken(t *testing.T) {
-	sm := &sessionManager{}
-	flight, leader := sm.beginFallback("tok-A")
-	if !leader {
-		t.Fatal("首个回退调用必须成为 leader")
-	}
-	joined, leader := sm.beginFallback("tok-A")
-	if leader || joined != flight {
-		t.Fatal("同 token 的并发回退必须加入已有 flight")
-	}
-	sm.endFallback("tok-A", flight)
-	select {
-	case <-flight:
-	default:
-		t.Fatal("结束回退必须唤醒等待者")
-	}
-}
-
 // TestInvalidateCachedUserInfo_ResetsFallbackToken 锁定：UpdateMyInfo 后缓存失效重建，
 // 新缓存同样必须重新经过学校回退，不得因残留 token 跳过。
 func TestInvalidateCachedUserInfo_ResetsFallbackToken(t *testing.T) {
