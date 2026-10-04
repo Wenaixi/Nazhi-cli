@@ -58,14 +58,33 @@ func (c *Client) ActivateSession(ctx context.Context, token string) (*types.User
 		return info, err
 	}
 	// 学校信息 SSO 回退在 sm.mu 锁外执行，不得把网络往返拼进临界区。
-	// 用当前 token 绑定完成状态，避免旧 token 的迟到回退误标记新缓存。
-	if !c.sm.fallbackCompletedFor(token) {
+	for {
+		if c.sm.fallbackCompletedFor(token) {
+			return c.sm.cachedInfoForToken(token, info), nil
+		}
+		flight, leader := c.sm.beginFallback(token)
+		if !leader {
+			select {
+			case <-flight:
+				continue
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+		}
+
 		infoCopy := *info
 		c.postProcessSchoolFallback(ctx, &infoCopy)
-		c.sm.publishFallback(&infoCopy, token)
-		return &infoCopy, nil
+		published := c.sm.publishFallback(&infoCopy, token)
+		c.sm.endFallback(token, flight)
+		if published {
+			return &infoCopy, nil
+		}
+		// 当前 token 已变化，丢弃迟到结果；旧 token 的调用不再重复发起回退。
+		if c.sm.LoadToken() != token {
+			return info, nil
+		}
+		info = c.sm.cachedInfoForToken(token, info)
 	}
-	return info, nil
 }
 
 // activateSessionLocked 是 ActivateSession 的内部 4 步实现，
@@ -181,7 +200,9 @@ type sessionManager struct {
 	lastFailedToken string
 	cachedUserInfo  *types.UserInfo // 持锁 fast path 缓存。CLI 单进程命中一次，
 	// SDK 多 goroutine 并发 FetchTasks 可复用步骤 4 数据。
-	fallbackToken atomic.Value // 存储已完成学校回退的 token，锁外读取安全。
+	fallbackToken  atomic.Value // 存储已完成学校回退的 token，锁外读取安全。
+	fallbackMu     sync.Mutex
+	fallbackFlight map[string]chan struct{}
 }
 
 // isBackoffHit 检查给定 token 是否在 backoff 冷却窗口内。
@@ -209,14 +230,47 @@ func (sm *sessionManager) fallbackCompletedFor(token string) bool {
 }
 
 // publishFallback 只发布仍属于当前 token 的回退结果。
-func (sm *sessionManager) publishFallback(info *types.UserInfo, token string) {
+func (sm *sessionManager) publishFallback(info *types.UserInfo, token string) bool {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 	if info == nil || sm.LoadToken() != token {
-		return
+		return false
 	}
 	sm.cachedUserInfo = info
 	sm.fallbackToken.Store(token)
+	return true
+}
+
+func (sm *sessionManager) cachedInfoForToken(token string, fallback *types.UserInfo) *types.UserInfo {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	if sm.LoadToken() == token && sm.cachedUserInfo != nil {
+		return sm.cachedUserInfo
+	}
+	return fallback
+}
+
+func (sm *sessionManager) beginFallback(token string) (chan struct{}, bool) {
+	sm.fallbackMu.Lock()
+	defer sm.fallbackMu.Unlock()
+	if sm.fallbackFlight == nil {
+		sm.fallbackFlight = make(map[string]chan struct{})
+	}
+	if flight, ok := sm.fallbackFlight[token]; ok {
+		return flight, false
+	}
+	flight := make(chan struct{})
+	sm.fallbackFlight[token] = flight
+	return flight, true
+}
+
+func (sm *sessionManager) endFallback(token string, flight chan struct{}) {
+	sm.fallbackMu.Lock()
+	if current, ok := sm.fallbackFlight[token]; ok && current == flight {
+		delete(sm.fallbackFlight, token)
+		close(flight)
+	}
+	sm.fallbackMu.Unlock()
 }
 
 func (sm *sessionManager) resetFallback() {
