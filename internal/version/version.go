@@ -1,7 +1,7 @@
 // Package version 提供 CLI 版本信息。
 package version
 
-// Version 是 nazhi CLI 的当前版本号。
+// Version 是 Nazhi-cli 的当前版本号。
 // 遵循 semver：major.minor.patch
 //
 //	0.1.0 — 初始版本
@@ -130,4 +130,7 @@ package version
 //	        记录五个架构候选的源码核实裁决；保留任务提交、写操作和双路径分页 seam；
 //	        明确会话学校信息回退竞态仍待不可复用代次、取消清理和真实并发测试后再修复；
 //	        精简 CLAUDE.md，校准前端对照、门禁与当前实现事实。
-var Version = "1.10.0"
+//	1.11.0 — 仓库与模块路径改名：
+//	        GitHub 仓库改为 Wenaixi/Nazhi-cli，Go 模块路径同步大写；
+//	        下游 import 与 require 必须写大写并升到 v1.11.0。
+var Version = "1.11.0"

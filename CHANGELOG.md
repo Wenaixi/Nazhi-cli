@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+## [1.11.0] - 2026-10-05
+
+发布链接：[v1.11.0](https://github.com/Wenaixi/Nazhi-cli/releases/tag/v1.11.0)
+
+### 仓库与模块路径改名
+
+- GitHub 仓库由 `Wenaixi/nazhi-cli` 改名为 `Wenaixi/Nazhi-cli`。旧地址会由 GitHub 自动 301 跳转，Issue、PR、tag 与 CI secrets 不受影响。
+- Go 模块路径同步改为 `github.com/Wenaixi/Nazhi-cli`，仓库全部 import 与 go.mod module 行同步大写。
+- 下游项目必须把 import 与 require 路径写成大写 `Nazhi-cli`，并升到 v1.11.0 或更高版本。
+- 旧标签 v1.10.0 及更早版本的 go.mod 声明的是小写模块路径，在新路径下不可用；这些标签本身保留，Release 链接照旧可访问。
+- 本次不采用 `/v2` 后缀：Go 规范要求 v2+ 版本的模块路径末尾带主版本后缀，按 v2.0.0 发布就必须引入该后缀。本次按 v1.11.0 发布，模块路径只做大小写统一。
+
+### 文档与展示名
+
+- README、CONTEXT、CONTRIBUTING、SECURITY、docs 指引、Makefile 输出、CI 工作流注释与 Release 正文的自称统一为 `Nazhi-cli`。
+- CHANGELOG 中 v1.6.1 至 v1.10.0 的历史发布链接保持原样，不改写已发生的发布记录。
 ## [1.10.0] - 2026-10-04
 
 发布链接：[v1.10.0](https://github.com/Wenaixi/nazhi-cli/releases/tag/v1.10.0)
