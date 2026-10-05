@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Wenaixi/nazhi-cli/pkg/types"
+	"github.com/Wenaixi/Nazhi-cli/pkg/types"
 )
 
 // testBizHandlerDoBiz 为 doBizAndDecode 测试创建 mock biz server，

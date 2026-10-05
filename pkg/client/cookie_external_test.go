@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Wenaixi/nazhi-cli/pkg/client"
+	"github.com/Wenaixi/Nazhi-cli/pkg/client"
 )
 
 // ─── sync_cookie_error_test.go: New 错误传播 ───

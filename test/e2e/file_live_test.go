@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Wenaixi/nazhi-cli/pkg/client"
+	"github.com/Wenaixi/Nazhi-cli/pkg/client"
 )
 
 func TestE2E_File(t *testing.T) {

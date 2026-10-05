@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Wenaixi/nazhi-cli/pkg/types"
+	"github.com/Wenaixi/Nazhi-cli/pkg/types"
 )
 
 func TestDecodeTaskInputJSON_Exhaustive_NumericHours(t *testing.T) {

@@ -9,7 +9,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/Wenaixi/nazhi-cli/pkg/types"
+	"github.com/Wenaixi/Nazhi-cli/pkg/types"
 )
 
 const maxPayloadSize = 16 << 20

@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Wenaixi/nazhi-cli/pkg/client"
-	"github.com/Wenaixi/nazhi-cli/pkg/envelope"
+	"github.com/Wenaixi/Nazhi-cli/pkg/client"
+	"github.com/Wenaixi/Nazhi-cli/pkg/envelope"
 )
 
 // TestPrintError_DoesNotCallOsExit 回归测试：printError 必须不调用 os.Exit。

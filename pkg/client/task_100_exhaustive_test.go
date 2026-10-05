@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Wenaixi/nazhi-cli/pkg/types"
+	"github.com/Wenaixi/Nazhi-cli/pkg/types"
 )
 
 func mockExhaustive(t *testing.T, metaJSON string, cap *types.TaskAddCirclePayload) *httptest.Server {

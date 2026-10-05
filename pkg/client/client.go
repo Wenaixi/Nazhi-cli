@@ -1,4 +1,4 @@
-// Package client 是 nazhi-cli SDK 的根包。
+// Package client 是 Nazhi-cli SDK 的根包。
 //
 // 每个 Client 实例拥有独立的 HTTP cookie jar，天然并发安全。
 // 所有方法都需要 context.Context，支持超时与取消。
@@ -16,7 +16,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/Wenaixi/nazhi-cli/pkg/logx"
+	"github.com/Wenaixi/Nazhi-cli/pkg/logx"
 )
 
 // ─── Client ───

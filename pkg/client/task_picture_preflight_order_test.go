@@ -9,7 +9,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/Wenaixi/nazhi-cli/pkg/types"
+	"github.com/Wenaixi/Nazhi-cli/pkg/types"
 )
 
 // TestBuildTaskPayload_PictureLimitRejectsBeforeNetwork 锁定「图片超限」是纯本地

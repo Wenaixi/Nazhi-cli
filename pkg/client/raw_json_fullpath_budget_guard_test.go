@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Wenaixi/nazhi-cli/pkg/client"
+	"github.com/Wenaixi/Nazhi-cli/pkg/client"
 )
 
 // TestGetCirclesJSON_FetchGuardBeforeMake 锁定：全量路径

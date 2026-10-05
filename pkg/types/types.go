@@ -1,4 +1,4 @@
-// Package types 定义 nazhi-cli SDK 的全部公共类型。
+// Package types 定义 Nazhi-cli SDK 的全部公共类型。
 //
 // 设计原则：
 //   - 全部响应字段统一 camelCase JSON tag（以平台真实键名为准，写实列表存在混用）

@@ -1,7 +1,7 @@
 # Issue tracker: GitHub
 
 Issues and specs for this repo live as GitHub issues at
-`https://github.com/Wenaixi/nazhi-cli`. Use the `gh` CLI for all operations.
+`https://github.com/Wenaixi/Nazhi-cli`. Use the `gh` CLI for all operations.
 
 本机已验证：`gh` v2.98.0，已登录 `Wenaixi`（token scopes 含 `repo`），可正常创建 issue / PR。
 

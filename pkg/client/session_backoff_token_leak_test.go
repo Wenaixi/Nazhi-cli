@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Wenaixi/nazhi-cli/pkg/types"
+	"github.com/Wenaixi/Nazhi-cli/pkg/types"
 )
 
 // TestSessionBackoffErrorMessage_DoesNotContainFullToken 回归测试：

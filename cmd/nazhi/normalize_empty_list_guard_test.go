@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/Wenaixi/nazhi-cli/pkg/envelope"
+	"github.com/Wenaixi/Nazhi-cli/pkg/envelope"
 )
 
 // TestNormalizeEmptyList_RawMessageNotTreatedAsRecordList 锁定反射判据的载荷边界。

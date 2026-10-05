@@ -1,11 +1,11 @@
-# nazhi-cli
+# Nazhi-cli
 
 **纳智综合评价系统 自动化 CLI + Go SDK**
 
 [![Go Version](https://img.shields.io/badge/Go-1.26+-00ADD8?logo=go)](https://go.dev/)
-[![Release](https://img.shields.io/github/v/release/Wenaixi/nazhi-cli)](https://github.com/Wenaixi/nazhi-cli/releases)
+[![Release](https://img.shields.io/github/v/release/Wenaixi/Nazhi-cli)](https://github.com/Wenaixi/Nazhi-cli/releases)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-[![CI](https://img.shields.io/github/actions/workflow/status/Wenaixi/nazhi-cli/ci.yml?branch=main)](https://github.com/Wenaixi/nazhi-cli/actions)
+[![CI](https://img.shields.io/github/actions/workflow/status/Wenaixi/Nazhi-cli/ci.yml?branch=main)](https://github.com/Wenaixi/Nazhi-cli/actions)
 
 一站式命令行工具 + Go SDK，面向纳智综合评价系统的全流程自动化：免验证码登录（五育活动端）、Session 激活、写实记录全生命周期管理（查询 / 提交 / 编辑 / 删除 / 评论 / 点赞）、任务与元数据、荣誉申报、典型案例、自我评价与毕业评价、用户信息维护、文件上传下载。所有 CLI 命令输出统一 JSON envelope，便于脚本解析与自动化编排。
 
@@ -34,7 +34,7 @@
 
 ### 预编译二进制（推荐）
 
-从 [Releases](https://github.com/Wenaixi/nazhi-cli/releases) 下载对应平台的二进制：
+从 [Releases](https://github.com/Wenaixi/Nazhi-cli/releases) 下载对应平台的二进制：
 
 | 平台 | 架构 | 文件 |
 |---|---|---|
@@ -49,14 +49,14 @@
 要求 Go 1.26+（以仓库 `go.mod` 为准）。
 
 ```bash
-go install github.com/Wenaixi/nazhi-cli/cmd/nazhi@latest
+go install github.com/Wenaixi/Nazhi-cli/cmd/nazhi@latest
 ```
 
 ### 从源码构建
 
 ```bash
-git clone https://github.com/Wenaixi/nazhi-cli.git
-cd nazhi-cli
+git clone https://github.com/Wenaixi/Nazhi-cli.git
+cd Nazhi-cli
 make build           # 当前平台纯 Go 构建
 make release         # 全平台纯 Go 构建（CI 等价）
 ```
@@ -253,9 +253,9 @@ import (
 	"os"
 	"time"
 
-	"github.com/Wenaixi/nazhi-cli/pkg/client"
-	"github.com/Wenaixi/nazhi-cli/pkg/types"
-	"github.com/Wenaixi/nazhi-cli/pkg/tokenparse" // SSO token 解析（可独立使用）
+	"github.com/Wenaixi/Nazhi-cli/pkg/client"
+	"github.com/Wenaixi/Nazhi-cli/pkg/types"
+	"github.com/Wenaixi/Nazhi-cli/pkg/tokenparse" // SSO token 解析（可独立使用）
 )
 
 // 登录走五育活动端免验证码接口（/uiActivityLogin/studentLogin），密码本地 MD5 计算。

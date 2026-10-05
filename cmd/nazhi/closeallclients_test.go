@@ -16,7 +16,7 @@ package main
 import (
 	"testing"
 
-	"github.com/Wenaixi/nazhi-cli/pkg/client"
+	"github.com/Wenaixi/Nazhi-cli/pkg/client"
 )
 
 // resetDefaultScope 清空默认 Scope 的登记列表，让测试从干净状态开始。

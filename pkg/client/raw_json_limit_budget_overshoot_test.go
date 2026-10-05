@@ -11,7 +11,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/Wenaixi/nazhi-cli/pkg/client"
+	"github.com/Wenaixi/Nazhi-cli/pkg/client"
 )
 
 // TestGetCirclesLimitJSON_PostConcatBudgetOvershoot 锁定：翻页完成后

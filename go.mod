@@ -1,4 +1,4 @@
-module github.com/Wenaixi/nazhi-cli
+module github.com/Wenaixi/Nazhi-cli
 
 go 1.26.5
 

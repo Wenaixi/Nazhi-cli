@@ -3,7 +3,7 @@ package main
 import (
 	"io"
 
-	"github.com/Wenaixi/nazhi-cli/pkg/client"
+	"github.com/Wenaixi/Nazhi-cli/pkg/client"
 )
 
 // 本文件是进程级资源清理的包级入口，资源所有权由 ProcessScope 持有

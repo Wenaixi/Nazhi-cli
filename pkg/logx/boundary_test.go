@@ -10,7 +10,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/Wenaixi/nazhi-cli/pkg/logx"
+	"github.com/Wenaixi/Nazhi-cli/pkg/logx"
 )
 
 func TestBoundary_ParseLevel_Edge(t *testing.T) {

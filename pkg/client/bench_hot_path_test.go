@@ -7,8 +7,8 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/Wenaixi/nazhi-cli/pkg/logx"
-	"github.com/Wenaixi/nazhi-cli/pkg/types"
+	"github.com/Wenaixi/Nazhi-cli/pkg/logx"
+	"github.com/Wenaixi/Nazhi-cli/pkg/types"
 )
 
 // ─── 热点路径 benchmark ───

@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Wenaixi/nazhi-cli/pkg/envelope"
-	"github.com/Wenaixi/nazhi-cli/pkg/types"
+	"github.com/Wenaixi/Nazhi-cli/pkg/envelope"
+	"github.com/Wenaixi/Nazhi-cli/pkg/types"
 	"github.com/spf13/cobra"
 )
 

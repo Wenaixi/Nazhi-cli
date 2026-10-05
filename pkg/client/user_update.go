@@ -7,7 +7,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/Wenaixi/nazhi-cli/pkg/types"
+	"github.com/Wenaixi/Nazhi-cli/pkg/types"
 )
 
 // 性别映射：中文名称 → API 数字代码

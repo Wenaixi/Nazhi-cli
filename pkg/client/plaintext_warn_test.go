@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Wenaixi/nazhi-cli/pkg/client"
-	"github.com/Wenaixi/nazhi-cli/pkg/logx"
+	"github.com/Wenaixi/Nazhi-cli/pkg/client"
+	"github.com/Wenaixi/Nazhi-cli/pkg/logx"
 )
 
 // 捕获 logger：把 New() 的告警写进 bytes.Buffer，供断言。

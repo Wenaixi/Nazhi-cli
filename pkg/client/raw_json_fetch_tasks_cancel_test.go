@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Wenaixi/nazhi-cli/pkg/client"
+	"github.com/Wenaixi/Nazhi-cli/pkg/client"
 )
 
 // TestFetchTasksJSON_ContextCancel_HitsErrRetryable 锁定：

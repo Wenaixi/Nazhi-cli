@@ -14,8 +14,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Wenaixi/nazhi-cli/pkg/logx"
-	"github.com/Wenaixi/nazhi-cli/pkg/types"
+	"github.com/Wenaixi/Nazhi-cli/pkg/logx"
+	"github.com/Wenaixi/Nazhi-cli/pkg/types"
 )
 
 // drainAndClose 先 drain response body 再 Close，让 net/http 把连接归还 keep-alive 池。

@@ -13,9 +13,9 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/Wenaixi/nazhi-cli/pkg/logx"
-	"github.com/Wenaixi/nazhi-cli/pkg/tokenparse"
-	"github.com/Wenaixi/nazhi-cli/pkg/types"
+	"github.com/Wenaixi/Nazhi-cli/pkg/logx"
+	"github.com/Wenaixi/Nazhi-cli/pkg/tokenparse"
+	"github.com/Wenaixi/Nazhi-cli/pkg/types"
 )
 
 // ─── GetSchoolID ───

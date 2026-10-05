@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/Wenaixi/nazhi-cli/pkg/types"
+	"github.com/Wenaixi/Nazhi-cli/pkg/types"
 )
 
 // ─── biz_error_wrap_test.go: CheckCode 双契约 ───

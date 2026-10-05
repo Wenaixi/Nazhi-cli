@@ -8,7 +8,7 @@ import (
 	"net/url"
 	"testing"
 
-	"github.com/Wenaixi/nazhi-cli/pkg/types"
+	"github.com/Wenaixi/Nazhi-cli/pkg/types"
 )
 
 // timeoutError 是一个模拟超时的 error，实现 Timeout() bool 接口。

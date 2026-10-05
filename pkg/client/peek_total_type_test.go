@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Wenaixi/nazhi-cli/pkg/client"
+	"github.com/Wenaixi/Nazhi-cli/pkg/client"
 )
 
 // peekTypeProbeServer 记录 getStudentCircle 请求的 type 参数与 pageSize，

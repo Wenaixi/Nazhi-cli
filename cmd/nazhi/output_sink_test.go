@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Wenaixi/nazhi-cli/pkg/envelope"
+	"github.com/Wenaixi/Nazhi-cli/pkg/envelope"
 )
 
 // TestOutputSink_ChannelOwnership 锁定「stdout 只承载成功数据、错误一律写

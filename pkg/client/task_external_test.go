@@ -18,7 +18,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Wenaixi/nazhi-cli/pkg/client"
+	"github.com/Wenaixi/Nazhi-cli/pkg/client"
 )
 
 // ─── task_concurrent_limit_test.go: FetchTasks 并发上限 ───

@@ -3,7 +3,7 @@ package main
 import (
 	"testing"
 
-	"github.com/Wenaixi/nazhi-cli/pkg/types"
+	"github.com/Wenaixi/Nazhi-cli/pkg/types"
 )
 
 func TestDecodeTaskSubmitInputFrontendNumericValues(t *testing.T) {

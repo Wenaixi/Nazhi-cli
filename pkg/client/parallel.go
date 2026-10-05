@@ -4,7 +4,7 @@ import (
 	"context"
 	"sync"
 
-	"github.com/Wenaixi/nazhi-cli/pkg/types"
+	"github.com/Wenaixi/Nazhi-cli/pkg/types"
 	"golang.org/x/sync/errgroup"
 )
 

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Wenaixi/nazhi-cli/pkg/logx"
+	"github.com/Wenaixi/Nazhi-cli/pkg/logx"
 )
 
 func TestParseLevel(t *testing.T) {

@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Wenaixi/nazhi-cli/pkg/client"
-	"github.com/Wenaixi/nazhi-cli/pkg/logx"
+	"github.com/Wenaixi/Nazhi-cli/pkg/client"
+	"github.com/Wenaixi/Nazhi-cli/pkg/logx"
 )
 
 func TestClientLogCarriesTraceID(t *testing.T) {

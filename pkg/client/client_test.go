@@ -1,4 +1,4 @@
-// Package client_test 包含 nazhi-cli SDK 的全量测试。
+// Package client_test 包含 Nazhi-cli SDK 的全量测试。
 package client_test
 
 import (
@@ -16,8 +16,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Wenaixi/nazhi-cli/pkg/client"
-	"github.com/Wenaixi/nazhi-cli/pkg/types"
+	"github.com/Wenaixi/Nazhi-cli/pkg/client"
+	"github.com/Wenaixi/Nazhi-cli/pkg/types"
 )
 
 // ─── 辅助 ───

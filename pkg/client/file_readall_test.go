@@ -18,7 +18,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Wenaixi/nazhi-cli/pkg/client"
+	"github.com/Wenaixi/Nazhi-cli/pkg/client"
 )
 
 // makeJpegTempFile 在 t.TempDir() 中创建一个合法的 JPEG 测试文件，

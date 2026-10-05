@@ -114,7 +114,7 @@ install:
 release: test vet build build-linux build-darwin build-windows
 	@echo ""
 	@echo "═══════════════════════════"
-	@echo "  nazhi-cli v$(VERSION) 跨平台构建完成"
+	@echo "  Nazhi-cli v$(VERSION) 跨平台构建完成"
 	@echo "═══════════════════════════"
 	ls -lh bin/
 
@@ -130,7 +130,7 @@ clean:
 # ─── 帮助 ───
 
 help:
-	@echo "nazhi-cli v$(VERSION) — 构建命令"
+	@echo "Nazhi-cli v$(VERSION) — 构建命令"
 	@echo "═══════════════════════════════════════"
 	@echo "  make build        编译 CLI（纯 Go，登录免验证码） → bin/nazhi.exe"
 	@echo "  make build-linux  交叉编译 Linux amd64"

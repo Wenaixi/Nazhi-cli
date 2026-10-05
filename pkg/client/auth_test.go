@@ -15,7 +15,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/Wenaixi/nazhi-cli/pkg/tokenparse"
+	"github.com/Wenaixi/Nazhi-cli/pkg/tokenparse"
 	"io"
 	"log/slog"
 	"net/http"
@@ -25,7 +25,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Wenaixi/nazhi-cli/pkg/types"
+	"github.com/Wenaixi/Nazhi-cli/pkg/types"
 )
 
 // ─── auth_200_expires_warn_test.go: 200 路径 expiresAt 兜底 WARN 日志 ───

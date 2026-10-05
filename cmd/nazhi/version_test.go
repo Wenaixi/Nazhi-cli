@@ -6,7 +6,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/Wenaixi/nazhi-cli/internal/version"
+	"github.com/Wenaixi/Nazhi-cli/internal/version"
 )
 
 // TestVersionCommand 验证 `nazhi version` 输出 JSON 格式的版本号。

@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/Wenaixi/nazhi-cli/pkg/types"
+	"github.com/Wenaixi/Nazhi-cli/pkg/types"
 )
 
 // TestFetchTasks_ViaParallelDims_Regression 锁定迁移到 ParallelDims 前后的行为一致性。

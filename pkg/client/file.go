@@ -18,8 +18,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Wenaixi/nazhi-cli/pkg/logx"
-	"github.com/Wenaixi/nazhi-cli/pkg/types"
+	"github.com/Wenaixi/Nazhi-cli/pkg/logx"
+	"github.com/Wenaixi/Nazhi-cli/pkg/types"
 )
 
 // MaxAttachmentSize 是非图片附件直传的上限（20MB，SDK 有意放宽：前端镜像文案 20MB，

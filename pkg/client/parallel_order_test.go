@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Wenaixi/nazhi-cli/pkg/types"
+	"github.com/Wenaixi/Nazhi-cli/pkg/types"
 )
 
 // TestParallelDims_PreservesDimensionOrder 锁定聚合结果的维度声明顺序：

@@ -17,7 +17,7 @@ import (
 	"net/url"
 	"strconv"
 
-	"github.com/Wenaixi/nazhi-cli/pkg/types"
+	"github.com/Wenaixi/Nazhi-cli/pkg/types"
 )
 
 // GetHonorTypes 获取所有可申报的荣誉类型。

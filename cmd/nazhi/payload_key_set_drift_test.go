@@ -28,7 +28,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Wenaixi/nazhi-cli/pkg/types"
+	"github.com/Wenaixi/Nazhi-cli/pkg/types"
 )
 
 // structJSONKeys 返回目标结构体参与 JSON 序列化的全部键名。

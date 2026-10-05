@@ -31,7 +31,7 @@ import (
 	"net/url"
 	"strconv"
 
-	"github.com/Wenaixi/nazhi-cli/pkg/types"
+	"github.com/Wenaixi/Nazhi-cli/pkg/types"
 )
 
 // rawListBytes 返回 dataList 的原始字节。dataList 缺失时返回 nil。

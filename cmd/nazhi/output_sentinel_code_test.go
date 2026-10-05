@@ -6,7 +6,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/Wenaixi/nazhi-cli/pkg/client"
+	"github.com/Wenaixi/Nazhi-cli/pkg/client"
 )
 
 // TestPrintError_BusinessRejected_ExitCode1 业务拒绝（服务端 code!=1）属确定性

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Wenaixi/nazhi-cli/pkg/types"
+	"github.com/Wenaixi/Nazhi-cli/pkg/types"
 )
 
 // TestBuildTaskPayload_ContentTooLong 锁定 content ≤200 字校验：

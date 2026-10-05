@@ -6,7 +6,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/Wenaixi/nazhi-cli/pkg/client"
+	"github.com/Wenaixi/Nazhi-cli/pkg/client"
 )
 
 // ─── 全维度 5xx 汇总错误不得误报业务拒绝 422/exit1 ───

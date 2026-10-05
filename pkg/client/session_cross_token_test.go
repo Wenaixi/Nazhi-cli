@@ -3,7 +3,7 @@ package client
 import (
 	"testing"
 
-	"github.com/Wenaixi/nazhi-cli/pkg/types"
+	"github.com/Wenaixi/Nazhi-cli/pkg/types"
 )
 
 // TestUpdateCachedUserInfo_CrossTokenIgnored 锁定 契约

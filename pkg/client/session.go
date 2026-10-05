@@ -10,8 +10,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/Wenaixi/nazhi-cli/pkg/logx"
-	"github.com/Wenaixi/nazhi-cli/pkg/types"
+	"github.com/Wenaixi/Nazhi-cli/pkg/logx"
+	"github.com/Wenaixi/Nazhi-cli/pkg/types"
 )
 
 // defaultSessionBackoff 是激活失败后禁止重试的默认时间窗口。默认 5 秒。

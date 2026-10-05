@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Wenaixi/nazhi-cli/pkg/client"
+	"github.com/Wenaixi/Nazhi-cli/pkg/client"
 )
 
 // TestTaskHierarchy_CategoriesAlias 验证 GetTaskCategories 与 GetCircleTypes 行为一致且正确传递 pid 与 dimensionId。

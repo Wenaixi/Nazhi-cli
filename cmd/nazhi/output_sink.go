@@ -6,7 +6,7 @@ import (
 	"io"
 	"os"
 
-	"github.com/Wenaixi/nazhi-cli/pkg/envelope"
+	"github.com/Wenaixi/Nazhi-cli/pkg/envelope"
 )
 
 // 命令行输出通道。

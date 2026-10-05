@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Wenaixi/nazhi-cli/pkg/client"
+	"github.com/Wenaixi/Nazhi-cli/pkg/client"
 )
 
 // TestListCircleRecords_MergedRecordsClampedByRecordUpperBound 锁定合并阶段的条数闸。

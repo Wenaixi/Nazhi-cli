@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Wenaixi/nazhi-cli/pkg/client"
+	"github.com/Wenaixi/Nazhi-cli/pkg/client"
 )
 
 // matrixPageSize 是分页矩阵测试使用的 pageSize，与生产默认 500 解耦，

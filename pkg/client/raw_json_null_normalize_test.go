@@ -18,7 +18,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/Wenaixi/nazhi-cli/pkg/client"
+	"github.com/Wenaixi/Nazhi-cli/pkg/client"
 )
 
 // circlePageNullBody 构造 getStudentCircle 响应，dataList 用给定原始值。

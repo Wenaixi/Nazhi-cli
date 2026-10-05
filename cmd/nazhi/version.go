@@ -1,8 +1,8 @@
 package main
 
 import (
-	"github.com/Wenaixi/nazhi-cli/internal/version"
-	"github.com/Wenaixi/nazhi-cli/pkg/envelope"
+	"github.com/Wenaixi/Nazhi-cli/internal/version"
+	"github.com/Wenaixi/Nazhi-cli/pkg/envelope"
 	"github.com/spf13/cobra"
 )
 
@@ -10,7 +10,7 @@ import (
 var versionCmd = &cobra.Command{
 	Use:   "version",
 	Short: "显示版本信息",
-	Long:  `显示 nazhi-cli 当前版本号。`,
+	Long:  `显示 Nazhi-cli 当前版本号。`,
 	Args:  cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
 		printEnvelope(envelope.Success(map[string]string{"version": version.Version}))

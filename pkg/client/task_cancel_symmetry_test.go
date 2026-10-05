@@ -24,7 +24,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Wenaixi/nazhi-cli/pkg/types"
+	"github.com/Wenaixi/Nazhi-cli/pkg/types"
 )
 
 // mockCancelClient 构造一个最小可用 Client（自包含测试，不依赖外部 helper）。

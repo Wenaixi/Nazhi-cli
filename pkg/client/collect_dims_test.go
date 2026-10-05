@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Wenaixi/nazhi-cli/pkg/types"
+	"github.com/Wenaixi/Nazhi-cli/pkg/types"
 )
 
 // TestCollectDims_PreservesOrder 锁定并发收集内核的保序契约：

@@ -26,7 +26,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/Wenaixi/nazhi-cli/pkg/client"
+	"github.com/Wenaixi/Nazhi-cli/pkg/client"
 )
 
 // TestFetchTasksJSON_DimGateIsPrefetch 断言维度闸在发出请求之前生效：

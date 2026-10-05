@@ -8,9 +8,9 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/Wenaixi/nazhi-cli/internal/recoverx"
-	"github.com/Wenaixi/nazhi-cli/internal/version"
-	"github.com/Wenaixi/nazhi-cli/pkg/logx"
+	"github.com/Wenaixi/Nazhi-cli/internal/recoverx"
+	"github.com/Wenaixi/Nazhi-cli/internal/version"
+	"github.com/Wenaixi/Nazhi-cli/pkg/logx"
 	"github.com/spf13/cobra"
 )
 

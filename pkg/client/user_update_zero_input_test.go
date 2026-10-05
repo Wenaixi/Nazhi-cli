@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Wenaixi/nazhi-cli/pkg/types"
+	"github.com/Wenaixi/Nazhi-cli/pkg/types"
 )
 
 // TestUpdateMyInfoStructured_ZeroInputNoOp 锁定 契约

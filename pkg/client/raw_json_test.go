@@ -21,7 +21,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Wenaixi/nazhi-cli/pkg/client"
+	"github.com/Wenaixi/Nazhi-cli/pkg/client"
 )
 
 // rawHonorListBody 构造 getHonorByStudentId 响应，含 records + pageBean。

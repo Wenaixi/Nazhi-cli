@@ -1,4 +1,4 @@
-# nazhi-cli CI 工作流
+# Nazhi-cli CI 工作流
 #
 # 触发条件:
 #   - push / PR → main 分支: 检测 + 单元测试 + 跨平台构建
@@ -269,7 +269,7 @@ jobs:
           name: nazhi ${{ github.ref_name }}
           draft: false
           body: |
-            ## nazhi-cli ${{ github.ref_name }}
+            ## Nazhi-cli ${{ github.ref_name }}
 
             请查看 [CHANGELOG.md](../../blob/main/CHANGELOG.md) 了解更新详情。
 

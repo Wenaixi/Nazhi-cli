@@ -8,9 +8,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/Wenaixi/nazhi-cli/pkg/client"
-	"github.com/Wenaixi/nazhi-cli/pkg/envelope"
-	"github.com/Wenaixi/nazhi-cli/pkg/logx"
+	"github.com/Wenaixi/Nazhi-cli/pkg/client"
+	"github.com/Wenaixi/Nazhi-cli/pkg/envelope"
+	"github.com/Wenaixi/Nazhi-cli/pkg/logx"
 )
 
 // pendingExitCode 追踪本进程退出码。三分退出码：0 成功 / 1 partial/业务 / 2 服务端 / 3 参数。

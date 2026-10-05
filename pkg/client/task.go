@@ -12,8 +12,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/Wenaixi/nazhi-cli/internal/recoverx"
-	"github.com/Wenaixi/nazhi-cli/pkg/types"
+	"github.com/Wenaixi/Nazhi-cli/internal/recoverx"
+	"github.com/Wenaixi/Nazhi-cli/pkg/types"
 )
 
 // fetchTasksConcurrentLimit 是 FetchTasks 并发拉取维度的上限。

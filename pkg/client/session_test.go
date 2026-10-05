@@ -18,7 +18,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Wenaixi/nazhi-cli/pkg/types"
+	"github.com/Wenaixi/Nazhi-cli/pkg/types"
 )
 
 // ─── session_backoff_concurrent_test.go (S1): 100 并发 backoff 抑制 ───

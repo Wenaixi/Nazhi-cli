@@ -3,7 +3,7 @@ package client_test
 import (
 	"testing"
 
-	"github.com/Wenaixi/nazhi-cli/pkg/client"
+	"github.com/Wenaixi/Nazhi-cli/pkg/client"
 )
 
 // TestClient_Close_ReleasesHTTPTransport 验证 Client.Close() 关闭 HTTP keep-alive

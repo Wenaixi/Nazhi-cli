@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Wenaixi/nazhi-cli/pkg/types"
+	"github.com/Wenaixi/Nazhi-cli/pkg/types"
 )
 
 // TestUpdateMyInfo_InvalidatesCachedUserInfo 回归：UpdateMyInfo 成功后必须
